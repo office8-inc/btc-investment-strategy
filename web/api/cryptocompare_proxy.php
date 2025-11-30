@@ -1,37 +1,40 @@
 <?php
 /**
- * CoinGecko API Proxy
+ * CryptoCompare API Proxy
  * CORSおよびCSPの問題を回避するためのサーバーサイドプロキシ
+ * 
+ * バックエンド（Python）と同じCryptoCompare APIを使用して
+ * 365日分の正確な日足OHLCデータを取得
  */
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Cache-Control: max-age=300'); // 5分キャッシュ
 
-$coin = isset($_GET['coin']) ? $_GET['coin'] : 'bitcoin';
-$vs_currency = isset($_GET['vs_currency']) ? $_GET['vs_currency'] : 'usd';
-$days = isset($_GET['days']) ? intval($_GET['days']) : 90;
+$fsym = isset($_GET['fsym']) ? $_GET['fsym'] : 'BTC';
+$tsym = isset($_GET['tsym']) ? $_GET['tsym'] : 'USD';
+$limit = isset($_GET['limit']) ? intval($_GET['limit']) : 365;
 
 // パラメータのバリデーション
-$allowedCoins = ['bitcoin', 'ethereum'];
-$allowedCurrencies = ['usd', 'jpy', 'eur'];
+$allowedFsym = ['BTC', 'ETH'];
+$allowedTsym = ['USD', 'JPY'];
 
-if (!in_array($coin, $allowedCoins)) {
-    $coin = 'bitcoin';
+if (!in_array($fsym, $allowedFsym)) {
+    $fsym = 'BTC';
 }
-if (!in_array($vs_currency, $allowedCurrencies)) {
-    $vs_currency = 'usd';
+if (!in_array($tsym, $allowedTsym)) {
+    $tsym = 'USD';
 }
-if ($days < 1 || $days > 365) {
-    $days = 90;
+if ($limit < 1 || $limit > 2000) {
+    $limit = 365;
 }
 
-$url = "https://api.coingecko.com/api/v3/coins/{$coin}/ohlc?vs_currency={$vs_currency}&days={$days}";
+$url = "https://min-api.cryptocompare.com/data/v2/histoday?fsym={$fsym}&tsym={$tsym}&limit={$limit}";
 
 $ch = curl_init();
 curl_setopt($ch, CURLOPT_URL, $url);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+curl_setopt($ch, CURLOPT_TIMEOUT, 30);
 curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
     'Accept: application/json',
@@ -51,7 +54,7 @@ if ($error) {
 
 if ($httpCode !== 200) {
     http_response_code($httpCode);
-    echo json_encode(['error' => 'CoinGecko API error', 'httpCode' => $httpCode]);
+    echo json_encode(['error' => 'CryptoCompare API error', 'httpCode' => $httpCode]);
     exit;
 }
 

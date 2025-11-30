@@ -4,8 +4,8 @@
 予測結果をWebページにアップロードする。
 
 データソース:
-- CoinGecko: 価格・OHLC・市場データ
-- CryptoCompare: 仮想通貨ニュース
+- CoinGecko: 現在価格・市場データ（時価総額、24h変動など）
+- CryptoCompare: 日足OHLCデータ（365日分）・仮想通貨ニュース
 - Fear & Greed Index: 市場センチメント
 - Alpha Vantage: 米国株式市場データ
 - FRED: マクロ経済指標
@@ -69,9 +69,9 @@ def run_analysis() -> None:
     logger.info("=" * 60)
 
     # ==================== 1. データ収集 ====================
-    logger.info("Step 1: 価格データ収集（CoinGecko）")
+    logger.info("Step 1: 価格データ収集（CoinGecko + CryptoCompare）")
 
-    # CoinGecko から市場データを取得
+    # CoinGecko から市場データを取得（現在価格・時価総額など）
     coingecko = CoinGeckoClient()
     btc_market_data = coingecko.get_bitcoin_market_data()
 
@@ -82,8 +82,9 @@ def run_analysis() -> None:
         logger.error("CoinGeckoからBTC価格を取得できませんでした")
         raise RuntimeError("BTC価格の取得に失敗しました")
 
-    # CoinGecko から OHLC データを取得
-    df_daily = coingecko.get_ohlc_dataframe(days=365)
+    # CryptoCompare から OHLC データを取得（正確な日足データ）
+    cryptocompare = CryptoCompareClient()
+    df_daily = cryptocompare.get_ohlc_dataframe(days=365)
     if df_daily is not None and len(df_daily) >= 200:
         df_daily = add_technical_indicators(df_daily)
     logger.info(f"日足データ: {len(df_daily) if df_daily is not None else 0}本取得")

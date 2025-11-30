@@ -534,11 +534,12 @@
             }
         }
         
-        // CoinGeckoから価格データを取得（PHPプロキシ経由）
+        // CryptoCompareから価格データを取得（PHPプロキシ経由）
+        // バックエンド（Python）と同じAPIを使用して365日分の日足データを取得
         async function fetchCandleData() {
             try {
-                // PHPプロキシ経由でCoinGecko APIにアクセス（CSP回避）
-                const response = await fetch('api/coingecko_proxy.php?coin=bitcoin&vs_currency=usd&days=90');
+                // PHPプロキシ経由でCryptoCompare APIにアクセス（CSP回避）
+                const response = await fetch('api/cryptocompare_proxy.php?fsym=BTC&tsym=USD&limit=365');
                 
                 if (!response.ok) {
                     throw new Error('Proxy request failed: ' + response.status);
@@ -551,17 +552,18 @@
                     throw new Error(data.error);
                 }
                 
-                // CoinGecko OHLC形式: [[timestamp, open, high, low, close], ...]
-                if (Array.isArray(data) && data.length > 0) {
-                    const candles = data.map(function(item) {
+                // CryptoCompare形式: { Response: "Success", Data: { Data: [{time, open, high, low, close, ...}, ...] } }
+                if (data.Response === 'Success' && data.Data && data.Data.Data) {
+                    const candles = data.Data.Data.map(function(item) {
                         return {
-                            time: Math.floor(item[0] / 1000),  // ミリ秒→秒
-                            open: item[1],
-                            high: item[2],
-                            low: item[3],
-                            close: item[4],
+                            time: item.time,  // Unix秒
+                            open: item.open,
+                            high: item.high,
+                            low: item.low,
+                            close: item.close,
                         };
                     });
+                    // CryptoCompareは古い順で返すのでそのまま
                     
                     if (candles.length > 0) {
                         candleSeries.setData(candles);

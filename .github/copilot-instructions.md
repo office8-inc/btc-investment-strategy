@@ -9,11 +9,11 @@ X/Twitterの過去投稿はPineconeに保存し、類似状況での分析スタ
 ## 技術スタック
 
 - **言語**: Python 3.11+
-- **価格データ**: CoinGecko API（価格・OHLC・市場データ）
+- **価格データ**: CoinGecko API（現在価格・市場データ）、CryptoCompare API（日足OHLC）
 - **AI分析**: OpenAI API (GPT-4o)
 - **ベクトルDB**: Pinecone（ユーザーのX投稿類似検索・分析スタイル学習）
 - **X投稿取得**: Twitter/X API (tweepy) - 読み取りのみ
-- **チャート表示**: TradingView Lightweight Charts
+- **チャート表示**: TradingView Lightweight Charts + CryptoCompare API（PHPプロキシ経由）
 - **ホスティング**: XSERVER (FTP経由)
 - **市場データ**: CryptoCompare, CoinGecko, Fear & Greed Index
 - **マクロ経済**: Alpha Vantage, Polygon.io, Finnhub, FRED

@@ -8,7 +8,7 @@ AIによるビットコインのテクニカル・ファンダメンタル分析
 |------|------|
 | **目的** | BTC価格の将来予測パターンを自動分析・可視化 |
 | **分析手法** | テクニカル分析 + ファンダメンタル分析 + 過去パターンマッチング |
-| **価格データ** | CoinGecko API |
+| **価格データ** | CoinGecko API（現在価格）、CryptoCompare API（日足OHLC） |
 | **出力** | Webページに10パターンの予想チャート（確率順） |
 | **ホスティング** | XSERVER（FTP自動アップロード） |
 | **実行頻度** | 毎日朝9時（日足確定後） |
@@ -19,9 +19,9 @@ AIによるビットコインのテクニカル・ファンダメンタル分析
 ```mermaid
 flowchart TB
     subgraph DataCollection["📊 データ収集層"]
-        CoinGecko["CoinGecko<br/>価格・OHLC・市場データ"]
+        CoinGecko["CoinGecko<br/>現在価格・市場データ"]
+        CryptoCompare["CryptoCompare<br/>日足OHLC・ニュース"]
         Twitter["Twitter/X API<br/>@DriftSeiya 投稿"]
-        CryptoNews["CryptoCompare<br/>仮想通貨ニュース"]
         FearGreed["Fear & Greed Index<br/>市場センチメント"]
         AlphaVantage["Alpha Vantage<br/>米国株データ"]
         Polygon["Polygon.io<br/>金融市場データ"]
@@ -48,8 +48,8 @@ flowchart TB
     end
 
     CoinGecko --> OpenAI
+    CryptoCompare --> OpenAI
     Twitter --> Pinecone
-    CryptoNews --> OpenAI
     FearGreed --> OpenAI
     AlphaVantage --> OpenAI
     Polygon --> OpenAI
@@ -74,7 +74,8 @@ flowchart TB
 sequenceDiagram
     participant Scheduler as ⏰ スケジューラー
     participant CoinGecko as 📊 CoinGecko API
-    participant News as 📰 CryptoCompare
+    participant CryptoCompare as 📈 CryptoCompare API
+    participant News as 📰 CryptoCompare News
     participant Twitter as 🐦 Twitter/X
     participant AI as 🤖 OpenAI GPT-4o
     participant Pinecone as 🗄️ Pinecone
@@ -87,11 +88,13 @@ sequenceDiagram
     Scheduler->>Scheduler: 毎朝9時に起動
     
     par データ収集
-        Scheduler->>CoinGecko: 価格データ取得
+        Scheduler->>CoinGecko: 現在価格・市場データ取得
+        Scheduler->>CryptoCompare: 日足OHLCデータ取得
         Scheduler->>News: ニュース取得
     end
     
-    CoinGecko-->>AI: OHLCV + テクニカル指標
+    CryptoCompare-->>AI: 日足OHLCV（365日分）
+    CoinGecko-->>AI: 現在価格 + 市場データ
     News-->>AI: 最新ニュース
     
     AI->>Pinecone: 現在の市場状況で類似検索
@@ -152,8 +155,8 @@ graph LR
 │   │   └── client.py
 │   ├── market_data/       # 市場データ取得
 │   │   ├── __init__.py
-│   │   ├── cryptocompare.py  # CryptoCompare ニュース
-│   │   ├── coingecko.py      # CoinGecko 価格・OHLC・市場データ
+│   │   ├── cryptocompare.py  # CryptoCompare 日足OHLC・ニュース
+│   │   ├── coingecko.py      # CoinGecko 現在価格・市場データ
 │   │   └── fear_greed.py     # Fear & Greed Index
 │   ├── macro_data/        # マクロ経済データ取得
 │   │   ├── __init__.py

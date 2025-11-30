@@ -1,6 +1,6 @@
 """CryptoCompare API クライアント.
 
-仮想通貨ニュースを取得する。
+仮想通貨ニュースとOHLCデータを取得する。
 """
 
 import logging
@@ -9,11 +9,15 @@ from datetime import datetime
 from typing import Any
 
 import httpx
+import pandas as pd
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
+
+# CryptoCompare API Base URLs
+CRYPTOCOMPARE_DATA_URL = "https://min-api.cryptocompare.com/data/v2"
 
 
 @dataclass
@@ -165,3 +169,91 @@ class CryptoCompareClient:
             summary_parts.append("")
 
         return "\n".join(summary_parts)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+    )
+    def get_ohlc_data(self, days: int = 365) -> list[dict[str, Any]] | None:
+        """ビットコインの日足OHLCデータを取得.
+
+        CryptoCompare histoday APIを使用して日足データを取得する。
+        認証不要で365日分の正確な日足データが取得可能。
+
+        Args:
+            days: 取得する日数（最大2000）
+
+        Returns:
+            OHLCデータのリスト [{time, open, high, low, close, volumefrom, volumeto}, ...]
+            取得失敗時はNone
+        """
+        try:
+            with httpx.Client(timeout=30) as client:
+                response = client.get(
+                    f"{CRYPTOCOMPARE_DATA_URL}/histoday",
+                    params={
+                        "fsym": "BTC",
+                        "tsym": "USD",
+                        "limit": days,
+                    },
+                )
+                response.raise_for_status()
+                result = response.json()
+
+            if result.get("Response") != "Success":
+                logger.warning(f"CryptoCompare OHLC: {result.get('Message', 'Unknown error')}")
+                return None
+
+            data = result.get("Data", {}).get("Data", [])
+            if not data:
+                logger.warning("CryptoCompare OHLC: No data returned")
+                return None
+
+            logger.info(f"Fetched {len(data)} OHLC candles from CryptoCompare")
+            return data
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"CryptoCompare OHLC API error: {e.response.status_code}")
+            return None
+        except Exception as e:
+            logger.error(f"Failed to fetch CryptoCompare OHLC data: {e}")
+            return None
+
+    def get_ohlc_dataframe(self, days: int = 365) -> pd.DataFrame | None:
+        """ビットコインの日足OHLCデータをDataFrame形式で取得.
+
+        テクニカル指標計算に使える形式でOHLCデータを返す。
+        CoinGeckoと異なり、正確な日足データを取得可能。
+
+        Args:
+            days: 取得する日数（最大2000）
+
+        Returns:
+            OHLCVデータを含むDataFrame (columns: timestamp, open, high, low, close, volume)
+            取得失敗時はNone
+        """
+        ohlc_data = self.get_ohlc_data(days=days)
+        if ohlc_data is None:
+            return None
+
+        try:
+            df = pd.DataFrame(ohlc_data)
+
+            # タイムスタンプをdatetimeに変換
+            df["timestamp"] = pd.to_datetime(df["time"], unit="s", utc=True)
+
+            # 出来高（volumefromがBTC単位の取引量）
+            df["volume"] = df["volumefrom"]
+
+            # 列の順序を整理
+            df = df[["timestamp", "open", "high", "low", "close", "volume"]]
+
+            # 時系列順にソート
+            df = df.sort_values("timestamp").reset_index(drop=True)
+
+            logger.info(f"Created OHLC DataFrame with {len(df)} rows from CryptoCompare")
+            return df
+
+        except Exception as e:
+            logger.error(f"Failed to create OHLC DataFrame: {e}")
+            return None
