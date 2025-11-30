@@ -385,6 +385,40 @@
             predictionLines = [];
         }
         
+        // timeframeを日数に変換
+        function timeframeToDays(timeframe) {
+            if (!timeframe) return 14;  // デフォルト2週間
+            
+            const tf = timeframe.toLowerCase();
+            
+            // 数値+単位のパターン
+            const match = tf.match(/^(\d+)\s*(day|week|month|d|w|m)/);
+            if (match) {
+                const num = parseInt(match[1]);
+                const unit = match[2];
+                if (unit.startsWith('d')) return num;
+                if (unit.startsWith('w')) return num * 7;
+                if (unit.startsWith('m')) return num * 30;
+            }
+            
+            // 単語パターン
+            if (tf.includes('week')) {
+                if (tf.includes('2') || tf.includes('two')) return 14;
+                return 7;
+            }
+            if (tf.includes('month')) {
+                if (tf.includes('2') || tf.includes('two')) return 60;
+                if (tf.includes('3') || tf.includes('three')) return 90;
+                return 30;
+            }
+            if (tf.includes('day')) {
+                if (tf.includes('3') || tf.includes('three')) return 3;
+                return 1;
+            }
+            
+            return 14;  // デフォルト
+        }
+        
         // 予測ラインを追加
         function addPredictionLines(patterns, currentPrice) {
             clearPredictionLines();
@@ -408,13 +442,13 @@
                         title: '#' + pattern.rank + ' ' + pattern.pattern_name,
                     });
                     
-                    // ローソク足の最後の時刻から予測ラインを開始
-                    // 14日間を日ごとのポイントで描画（14本分の幅で表示）
+                    // timeframeに基づいて予測期間を決定
+                    const days = timeframeToDays(pattern.timeframe);
                     const startTime = lastCandleTime;
-                    const days = 14;
                     const dayInSeconds = 24 * 60 * 60;
                     const priceChange = pattern.target_price - currentPrice;
                     
+                    // 日ごとのポイントで描画
                     const lineData = [];
                     for (let i = 0; i <= days; i++) {
                         lineData.push({
@@ -596,11 +630,18 @@
             
             updateNavButtons();
             
-            // チャートの表示範囲を未来14日分まで拡張
-            const futureTime = lastCandleTime + 14 * 24 * 60 * 60;
+            // チャートの表示範囲を最長の予測期間まで拡張
+            let maxDays = 14;  // デフォルト
+            if (prediction && prediction.patterns) {
+                prediction.patterns.forEach(p => {
+                    const days = timeframeToDays(p.timeframe);
+                    if (days > maxDays) maxDays = days;
+                });
+            }
+            const futureTime = lastCandleTime + maxDays * 24 * 60 * 60;
             chart.timeScale().setVisibleRange({
                 from: lastCandleTime - 90 * 24 * 60 * 60,  // 過去90日
-                to: futureTime,  // 未来14日
+                to: futureTime,  // 予測期間の最長まで
             });
             
             // ウィンドウリサイズ対応
