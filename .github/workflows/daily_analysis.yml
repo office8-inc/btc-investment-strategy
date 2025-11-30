@@ -129,7 +129,7 @@ jobs:
             MONTHLY=$(python -c "import json; d=json.load(open('data/tweet_sync_state.json')); print(d.get('monthly_api_calls', 0))")
             echo "### 📥 X投稿同期" >> $GITHUB_STEP_SUMMARY
             echo "- Pinecone内投稿数: **$SYNCED** 件" >> $GITHUB_STEP_SUMMARY
-            echo "- 月間API使用: **$MONTHLY** / 1500" >> $GITHUB_STEP_SUMMARY
+            echo "- 月間API使用: **$MONTHLY** / 100" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
           fi
           
