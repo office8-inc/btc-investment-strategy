@@ -1,6 +1,6 @@
 """OHLCV データ処理モジュール.
 
-ローソク足データの取得・変換・テクニカル指標計算を行う。
+ローソク足データの変換・テクニカル指標計算を行う。
 """
 
 import logging
@@ -11,8 +11,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import ta
-
-from src.data.bybit_client import BybitClient
 
 logger = logging.getLogger(__name__)
 
@@ -162,40 +160,3 @@ def calculate_support_resistance(
         "resistance": sorted([r1, r2, r3] + recent_highs, reverse=True),
         "support": sorted([s1, s2, s3] + recent_lows),
     }
-
-
-def fetch_ohlcv(
-    symbol: str = "BTCUSDT",
-    timeframe: str = "D",
-    limit: int = 200,
-    add_indicators: bool = True,
-) -> OHLCVData:
-    """OHLCVデータを取得.
-
-    Args:
-        symbol: 取引ペア
-        timeframe: 時間足
-        limit: 取得する足の数
-        add_indicators: テクニカル指標を追加するか
-
-    Returns:
-        OHLCVDataオブジェクト
-    """
-    client = BybitClient(symbol=symbol)
-    df = client.get_kline(timeframe=timeframe, limit=limit)
-
-    if add_indicators and len(df) >= 200:
-        df = add_technical_indicators(df)
-    elif add_indicators:
-        logger.warning(
-            f"Not enough data points ({len(df)}) for all indicators. "
-            "Some indicators may be NaN."
-        )
-        df = add_technical_indicators(df)
-
-    return OHLCVData(
-        df=df,
-        symbol=symbol,
-        timeframe=timeframe,
-        last_updated=datetime.now(),
-    )
