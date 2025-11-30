@@ -4,18 +4,16 @@ OpenAI GPT-4を使用してチャート予測パターンを生成する。
 """
 
 import json
-import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
+from loguru import logger
 from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from config.settings import settings
 from src.analysis.technical import TechnicalAnalysisResult
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -134,13 +132,25 @@ class Predictor:
             news_context=news_context,
         )
 
+        # プロンプトをログに出力（デバッグ用）
+        system_prompt = self._get_system_prompt()
+        logger.info("=" * 80)
+        logger.info("【AIプロンプト - システム】")
+        logger.info("=" * 80)
+        logger.info(f"\n{system_prompt}")
+        logger.info("=" * 80)
+        logger.info("【AIプロンプト - ユーザー】")
+        logger.info("=" * 80)
+        logger.info(f"\n{prompt}")
+        logger.info("=" * 80)
+
         try:
             response = self.client.chat.completions.create(
                 model=self._model,
                 messages=[
                     {
                         "role": "system",
-                        "content": self._get_system_prompt(),
+                        "content": system_prompt,
                     },
                     {
                         "role": "user",
@@ -237,9 +247,11 @@ class Predictor:
         prompt_parts.extend([
             "",
             "## 出力要件",
-            f"- {num_patterns}個の異なる価格シナリオを生成",
+            f"- **必ず{num_patterns}個**の異なる価格シナリオを生成してください（{num_patterns}個未満は不可）",
             f"- 予測期間: {', '.join(timeframes)}",
             "- 各シナリオには確率、目標価格、根拠、重要価格レベルを含める",
+            "- 上昇・下落・横ばいのシナリオをバランスよく含める",
+            "- 確率の合計が100%以下になるようにする",
             "",
             "以下のJSON形式で出力してください：",
             """```json

@@ -52,10 +52,11 @@ def setup_logging() -> None:
         "<cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - "
         "<level>{message}</level>",
     )
+    # 日付ごとのログファイル（同日は上書き）
+    log_file = f"logs/analysis_{datetime.now().strftime('%Y-%m-%d')}.log"
     logger.add(
-        "logs/analysis_{time:YYYY-MM-DD}.log",
-        rotation="1 day",
-        retention="30 days",
+        log_file,
+        mode="w",  # 上書きモード
         level="DEBUG",
     )
 
@@ -233,6 +234,21 @@ def run_analysis() -> None:
         current_price=current_price,
     )
 
+    # Fear & Greed Index からセンチメントスコアを計算 (0-100 → -1 to +1)
+    fg_sentiment_data = fear_greed.get_current()
+    if fg_sentiment_data:
+        # Fear & Greed: 0=Extreme Fear, 50=Neutral, 100=Extreme Greed
+        # センチメント: -1=Extreme Fear, 0=Neutral, +1=Extreme Greed
+        fg_sentiment = (fg_sentiment_data.value - 50) / 50
+        # ファンダメンタル分析の結果にセンチメントを上書き
+        fund_result.sentiment = fg_sentiment
+        logger.info(
+            f"Fear & Greed Index: {fg_sentiment_data.value} → "
+            f"センチメントスコア: {fg_sentiment:.2f}"
+        )
+    else:
+        logger.warning("Fear & Greed データなし、センチメントはニュースから算出")
+
     logger.info(f"市場センチメント: {fund_result.sentiment:.2f}")
     logger.info(f"ファンダメンタル: {fund_result.analysis_summary}")
 
@@ -274,10 +290,107 @@ def run_analysis() -> None:
     # ==================== 9. 結果出力 ====================
     logger.info("Step 9: 結果出力")
 
-    # 分析サマリーを生成
+    # 分析サマリーを生成（見やすく整形）
+    # 上位3パターンの要約を含める
+    top_patterns_summary = ""
+    if patterns:
+        pattern_lines = []
+        for p in patterns[:3]:
+            direction_ja = {"bullish": "📈上昇", "bearish": "📉下落", "neutral": "➡️横ばい"}.get(
+                p.direction, p.direction
+            )
+            pattern_lines.append(
+                f"  {p.rank}. {p.pattern_name}\n"
+                f"     {direction_ja} / 確率{p.probability*100:.0f}% / 目標${p.target_price:,.0f}"
+            )
+        top_patterns_summary = "\n".join(pattern_lines)
+
+    # Fear & Greed 情報
+    fg_info = ""
+    fg_data = fear_greed.get_current()
+    if fg_data:
+        fg_info = f"Fear & Greed Index: {fg_data.value}（{fg_data.value_classification}）"
+
+    # 価格変化情報
+    price_change_info = ""
+    if len(df_daily) >= 7:
+        week_ago_price = df_daily.iloc[-7]["close"]
+        price_change = ((current_price - week_ago_price) / week_ago_price) * 100
+        price_change_info = f"7日間変動: {price_change:+.1f}%"
+
+    # 市場状況を整形
+    market_status = " / ".join(filter(None, [fg_info, price_change_info]))
+
+    # マクロ経済情報を取得
+    macro_info = ""
+    fred_indicators = fred.get_all_indicators()
+    if fred_indicators:
+        macro_parts = []
+        for ind in fred_indicators:
+            if ind.name == "Federal Funds Rate":
+                macro_parts.append(f"政策金利: {ind.value:.2f}%")
+            elif ind.name == "Unemployment Rate":
+                macro_parts.append(f"失業率: {ind.value:.1f}%")
+        macro_info = " / ".join(macro_parts)
+
+    # 市場全体データ
+    market_data = coingecko.get_global_market_data()
+    btc_dominance = ""
+    total_market_cap = ""
+    if market_data:
+        if "btc_dominance" in market_data:
+            btc_dominance = f"BTCドミナンス: {market_data['btc_dominance']:.1f}%"
+        if "total_market_cap_usd" in market_data:
+            cap_trillion = market_data["total_market_cap_usd"] / 1e12
+            total_market_cap = f"仮想通貨時価総額: ${cap_trillion:.2f}兆"
+
+    # サポート・レジスタンス情報
+    support_levels = ""
+    resistance_levels = ""
+    if tech_result.support_resistance:
+        supports = tech_result.support_resistance.get("support", [])
+        resistances = tech_result.support_resistance.get("resistance", [])
+        if supports:
+            # 現在価格に近いサポート上位3つ
+            close_supports = sorted([float(s) for s in supports if float(s) < current_price], reverse=True)[:3]
+            if close_supports:
+                support_levels = "主要サポート: " + ", ".join([f"${int(s):,}" for s in close_supports])
+        if resistances:
+            # 現在価格に近いレジスタンス上位3つ
+            close_resistances = sorted([float(r) for r in resistances if float(r) > current_price])[:3]
+            if close_resistances:
+                resistance_levels = "主要レジスタンス: " + ", ".join([f"${int(r):,}" for r in close_resistances])
+
+    # 最新ニュースサマリー（上位3件）
+    news_headlines = ""
+    if news_items and len(news_items) > 0:
+        headlines = [n.title[:50] + "..." if len(n.title) > 50 else n.title for n in news_items[:3]]
+        news_headlines = "📰 " + " | ".join(headlines)
+
     analysis_summary = (
-        f"テクニカル: {tech_result.summary}\n"
-        f"ファンダメンタル: {fund_result.analysis_summary}"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"📊 テクニカル分析\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"{tech_result.summary}\n"
+        f"トレンド強度: {tech_result.strength}% / 検出パターン: {len(tech_result.patterns)}件\n"
+        + (f"{support_levels}\n" if support_levels else "")
+        + (f"{resistance_levels}\n" if resistance_levels else "")
+        + f"\n━━━━━━━━━━━━━━━━━━━━\n"
+        f"📰 ファンダメンタル分析\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"{fund_result.analysis_summary}\n"
+        f"センチメントスコア: {fund_result.sentiment:.2f}\n"
+        + (f"{news_headlines}\n" if news_headlines else "")
+        + f"\n━━━━━━━━━━━━━━━━━━━━\n"
+        f"🌡️ 市場状況\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"{market_status}\n"
+        + (f"{btc_dominance}" + (f" / {total_market_cap}" if total_market_cap else "") + "\n" if btc_dominance else "")
+        + (f"{macro_info}\n" if macro_info else "")
+        + f"\n━━━━━━━━━━━━━━━━━━━━\n"
+        f"🎯 AI予測トップ3\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"{top_patterns_summary}"
     )
 
     # TradingView Webhook に送信
