@@ -23,14 +23,6 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # --- Bybit API ---
-    BYBIT_API_KEY: str = Field(default="", description="Bybit API Key")
-    BYBIT_API_SECRET: str = Field(default="", description="Bybit API Secret")
-    BYBIT_BASE_URL: str = Field(
-        default="https://api.bybit.com",
-        description="Bybit API Base URL",
-    )
-
     # --- OpenAI API ---
     OPENAI_API_KEY: str = Field(default="", description="OpenAI API Key")
     OPENAI_MODEL: str = Field(
@@ -146,7 +138,7 @@ class Settings(BaseSettings):
         description="Log Level",
     )
 
-    @field_validator("BYBIT_API_KEY", "OPENAI_API_KEY")
+    @field_validator("OPENAI_API_KEY")
     @classmethod
     def check_not_placeholder(cls, v: str, info) -> str:
         """プレースホルダー値でないことを確認."""
@@ -160,11 +152,6 @@ class Settings(BaseSettings):
                 "Please set a valid API key in .env file."
             )
         return v
-
-    @property
-    def is_bybit_configured(self) -> bool:
-        """Bybit APIが設定されているか."""
-        return bool(self.BYBIT_API_KEY and self.BYBIT_API_SECRET)
 
     @property
     def is_openai_configured(self) -> bool:

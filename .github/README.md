@@ -73,7 +73,7 @@ flowchart TB
 ```mermaid
 sequenceDiagram
     participant Scheduler as ⏰ スケジューラー
-    participant Bybit as 📊 Bybit API
+    participant CoinGecko as 📊 CoinGecko API
     participant News as 📰 CryptoCompare
     participant Twitter as 🐦 Twitter/X
     participant AI as 🤖 OpenAI GPT-4o
@@ -87,11 +87,11 @@ sequenceDiagram
     Scheduler->>Scheduler: 毎朝9時に起動
     
     par データ収集
-        Scheduler->>Bybit: 価格データ取得
+        Scheduler->>CoinGecko: 価格データ取得
         Scheduler->>News: ニュース取得
     end
     
-    Bybit-->>AI: OHLCV + テクニカル指標
+    CoinGecko-->>AI: OHLCV + テクニカル指標
     News-->>AI: 最新ニュース
     
     AI->>Pinecone: 現在の市場状況で類似検索
