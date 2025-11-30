@@ -1,0 +1,159 @@
+# ビットコイン投資戦略 - 毎日自動分析ワークフロー
+# 毎朝9時（日本時間）に自動実行し、結果をXSERVERにアップロードします
+# 実行前にX APIで最新の#ビットコイン投稿を取得してPineconeに保存
+
+name: Daily BTC Analysis
+
+on:
+  # 毎日0:00 UTC（日本時道9:00）に実行
+  schedule:
+    - cron: '0 0 * * *'
+  
+  # 手動実行も可能
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.11'
+  TZ: 'Asia/Tokyo'
+
+jobs:
+  # メイン分析を実行
+  analyze:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Setup SSH key for XSERVER
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.XSERVER_PRIVATE_KEY }}" > ~/.ssh/xserver_key
+          chmod 600 ~/.ssh/xserver_key
+          ssh-keyscan -p 10022 ${{ secrets.XSERVER_SFTP_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Create .env file
+        run: |
+          cat > .env << EOF
+          # Bybit API (公開APIのみ使用)
+          BYBIT_BASE_URL=https://api.bybit.com
+          
+          # OpenAI API
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL=gpt-4o
+          
+          # Pinecone
+          PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}
+          PINECONE_INDEX_NAME=bitcoin
+          
+          # Twitter/X API（Pinecone同期用）
+          TWITTER_BEARER_TOKEN=${{ secrets.TWITTER_BEARER_TOKEN }}
+          TWITTER_TARGET_USERNAME=DriftSeiya
+          
+          # News & Market Data APIs
+          ALPHA_VANTAGE_API_KEY=${{ secrets.ALPHA_VANTAGE_API_KEY }}
+          POLYGON_API_KEY=${{ secrets.POLYGON_API_KEY }}
+          FINNHUB_API_KEY=${{ secrets.FINNHUB_API_KEY }}
+          FRED_API_KEY=${{ secrets.FRED_API_KEY }}
+          
+          # XSERVER SFTP
+          XSERVER_SFTP_HOST=${{ secrets.XSERVER_SFTP_HOST }}
+          XSERVER_SFTP_PORT=10022
+          XSERVER_SFTP_USER=${{ secrets.XSERVER_SFTP_USER }}
+          XSERVER_PRIVATE_KEY_PATH=~/.ssh/xserver_key
+          XSERVER_PASSPHRASE=${{ secrets.XSERVER_PASSPHRASE }}
+          XSERVER_REMOTE_DIR=${{ secrets.XSERVER_REMOTE_DIR }}
+          XSERVER_PUBLIC_URL=${{ secrets.XSERVER_PUBLIC_URL }}
+          
+          # 実行設定
+          TIMEZONE=Asia/Tokyo
+          LOG_LEVEL=INFO
+          EOF
+
+      - name: Create directories
+        run: mkdir -p logs data
+
+      - name: Download sync state
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: tweet-sync-state
+          path: data/
+
+      - name: Sync latest X posts to Pinecone
+        run: |
+          echo "📥 最新のX投稿を取得してPineconeに同期..."
+          # X API Free Tier: 月100件制限のため2件に制限（月30日×2件=60件/月）
+          python scripts/sync_tweets_to_pinecone.py --max-tweets 2
+          
+          if [ -f data/tweet_sync_state.json ]; then
+            echo ""
+            echo "同期状態:"
+            cat data/tweet_sync_state.json
+          fi
+
+      - name: Upload sync state
+        uses: actions/upload-artifact@v4
+        with:
+          name: tweet-sync-state
+          path: data/tweet_sync_state.json
+          retention-days: 90
+          overwrite: true
+
+      - name: Run BTC Analysis
+        run: python scripts/run_analysis.py
+        timeout-minutes: 15
+
+      - name: Upload analysis results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: analysis-results-${{ github.run_number }}
+          path: |
+            data/latest_prediction.json
+            logs/
+          retention-days: 30
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "## ✅ BTC分析が完了しました" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- 実行時刻: $(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S JST')" >> $GITHUB_STEP_SUMMARY
+          echo "- 結果ページ: ${{ secrets.XSERVER_PUBLIC_URL }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # X投稿同期サマリー
+          if [ -f data/tweet_sync_state.json ]; then
+            SYNCED=$(python -c "import json; d=json.load(open('data/tweet_sync_state.json')); print(d.get('total_synced_count', 0))")
+            MONTHLY=$(python -c "import json; d=json.load(open('data/tweet_sync_state.json')); print(d.get('monthly_api_calls', 0))")
+            echo "### 📥 X投稿同期" >> $GITHUB_STEP_SUMMARY
+            echo "- Pinecone内投稿数: **$SYNCED** 件" >> $GITHUB_STEP_SUMMARY
+            echo "- 月間API使用: **$MONTHLY** / 1500" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ -f data/latest_prediction.json ]; then
+            echo "### 予測サマリー" >> $GITHUB_STEP_SUMMARY
+            echo '```json' >> $GITHUB_STEP_SUMMARY
+            head -50 data/latest_prediction.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Failure notification
+        if: failure()
+        run: |
+          echo "## ❌ BTC分析が失敗しました" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "ログを確認してください。" >> $GITHUB_STEP_SUMMARY

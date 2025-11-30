@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BTC AI予測チャート</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #333;
+        }
+        
+        h1 {
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .price-info {
+            text-align: right;
+        }
+        
+        .current-price {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #00d4aa;
+        }
+        
+        .timestamp {
+            font-size: 0.85rem;
+            color: #888;
+        }
+        
+        #chart-container {
+            width: 100%;
+            height: 500px;
+            background: #16213e;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .patterns-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .pattern-card {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 15px;
+            border-left: 4px solid #666;
+        }
+        
+        .pattern-card.bullish {
+            border-left-color: #00d4aa;
+        }
+        
+        .pattern-card.bearish {
+            border-left-color: #ff6b6b;
+        }
+        
+        .pattern-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .pattern-rank {
+            background: #0f3460;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+        }
+        
+        .pattern-name {
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+        
+        .pattern-probability {
+            font-size: 1.3rem;
+            font-weight: bold;
+        }
+        
+        .bullish .pattern-probability {
+            color: #00d4aa;
+        }
+        
+        .bearish .pattern-probability {
+            color: #ff6b6b;
+        }
+        
+        .pattern-details {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            margin: 10px 0;
+            font-size: 0.9rem;
+        }
+        
+        .detail-item {
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .detail-label {
+            color: #888;
+        }
+        
+        .pattern-reasoning {
+            font-size: 0.85rem;
+            color: #aaa;
+            line-height: 1.5;
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #333;
+        }
+        
+        .summary-box {
+            background: #16213e;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .summary-box h3 {
+            margin-bottom: 10px;
+            color: #00d4aa;
+        }
+        
+        .tweet-box {
+            background: #0f3460;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            border: 1px solid #1a5276;
+        }
+        
+        .tweet-box h3 {
+            margin-bottom: 10px;
+            color: #1da1f2;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .tweet-content {
+            background: #16213e;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Segoe UI', sans-serif;
+            white-space: pre-wrap;
+            line-height: 1.6;
+            margin-bottom: 10px;
+            border: 1px solid #333;
+        }
+        
+        .copy-btn {
+            background: #1da1f2;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: background 0.2s;
+        }
+        
+        .copy-btn:hover {
+            background: #1a91da;
+        }
+        
+        .copy-btn.copied {
+            background: #00d4aa;
+        }
+        
+        .char-count {
+            font-size: 0.85rem;
+            color: #888;
+            margin-top: 8px;
+        }
+        
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 300px;
+            color: #888;
+        }
+        
+        .error {
+            background: #3d1f1f;
+            padding: 15px;
+            border-radius: 8px;
+            color: #ff6b6b;
+        }
+        
+        footer {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-size: 0.85rem;
+        }
+        
+        footer a {
+            color: #00d4aa;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🪙 BTC AI予測チャート</h1>
+            <div class="price-info">
+                <div class="current-price" id="current-price">--</div>
+                <div class="timestamp" id="timestamp">--</div>
+            </div>
+        </header>
+        
+        <div id="chart-container"></div>
+        
+        <div class="summary-box" id="summary-box">
+            <h3>📊 分析サマリー</h3>
+            <p id="summary-text">読み込み中...</p>
+        </div>
+        
+        <div class="tweet-box" id="tweet-box">
+            <h3>🐦 X投稿用テキスト</h3>
+            <div class="tweet-content" id="tweet-content">読み込み中...</div>
+            <button class="copy-btn" id="copy-btn" onclick="copyTweet()">
+                📋 コピーする
+            </button>
+            <div class="char-count" id="char-count"></div>
+        </div>
+        
+        <h2 style="margin-bottom: 15px;">📈 予測パターン（確率順）</h2>
+        <div class="patterns-grid" id="patterns-grid">
+            <div class="loading">データを読み込み中...</div>
+        </div>
+        
+        <footer>
+            <p>Powered by AI Analysis | <a href="https://x.com/DriftSeiya" target="_blank">@DriftSeiya</a></p>
+            <p>※ この予測は参考情報であり、投資判断の責任は利用者にあります。</p>
+        </footer>
+    </div>
+    
+    <script src="lightweight-charts.js"></script>
+    <script>
+        // ツイートテキストをコピー
+        function copyTweet() {
+            const tweetContent = document.getElementById('tweet-content').textContent;
+            navigator.clipboard.writeText(tweetContent).then(function() {
+                const btn = document.getElementById('copy-btn');
+                btn.innerHTML = '✅ コピーしました！';
+                btn.classList.add('copied');
+                setTimeout(function() {
+                    btn.innerHTML = '📋 コピーする';
+                    btn.classList.remove('copied');
+                }, 2000);
+            }).catch(function(err) {
+                alert('コピーに失敗しました');
+            });
+        }
+        
+        // ツイートテキストを生成
+        function generateTweetText(prediction) {
+            if (!prediction || !prediction.patterns || prediction.patterns.length === 0) {
+                return 'データなし';
+            }
+            
+            const price = prediction.current_price || 0;
+            const date = new Date(prediction.timestamp);
+            const dateStr = date.toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' });
+            
+            // 上位3パターンを取得
+            const top3 = prediction.patterns.slice(0, 3);
+            
+            let tweet = '🪙 BTC AI分析 ' + dateStr + '\n';
+            tweet += '💰 現在: $' + price.toLocaleString() + '\n\n';
+            
+            top3.forEach(function(p, i) {
+                const emoji = p.direction === 'bullish' ? '📈' : '📉';
+                const prob = (p.probability * 100).toFixed(0);
+                tweet += emoji + ' ' + p.pattern_name + '\n';
+                tweet += '   確率' + prob + '% → $' + p.target_price.toLocaleString() + '\n';
+            });
+            
+            tweet += '\n🔗 詳細: https://office8-inc.com/btc-analysis/';
+            tweet += '\n\n#BTC #Bitcoin #仮想通貨';
+            
+            return tweet;
+        }
+        
+        // 全リソース読み込み後に実行
+        window.onload = function() {
+            // チャート初期化
+            const chartContainer = document.getElementById('chart-container');
+            
+            // ライブラリ読み込み確認
+            if (typeof LightweightCharts === 'undefined') {
+                document.getElementById('patterns-grid').innerHTML = 
+                    '<div class="error">チャートライブラリの読み込みに失敗しました。</div>';
+                return;
+            }
+            
+            const chart = LightweightCharts.createChart(chartContainer, {
+                layout: {
+                    background: { color: '#16213e' },
+                    textColor: '#d1d4dc',
+                },
+                grid: {
+                    vertLines: { color: '#2B2B43' },
+                    horzLines: { color: '#2B2B43' },
+                },
+                crosshair: {
+                    mode: LightweightCharts.CrosshairMode.Normal,
+                },
+                rightPriceScale: {
+                    borderColor: '#2B2B43',
+                },
+                timeScale: {
+                    borderColor: '#2B2B43',
+                    timeVisible: true,
+                },
+            });
+            
+            const candleSeries = chart.addCandlestickSeries({
+                upColor: '#00d4aa',
+                downColor: '#ff6b6b',
+                borderDownColor: '#ff6b6b',
+                borderUpColor: '#00d4aa',
+                wickDownColor: '#ff6b6b',
+                wickUpColor: '#00d4aa',
+            });
+            
+            // 予測ラインを追加する関数
+            function addPredictionLines(patterns, currentPrice) {
+                patterns.forEach((pattern, index) => {
+                    const color = pattern.direction === 'bullish' ? '#00d4aa' : '#ff6b6b';
+                    
+                    if (pattern.target_price) {
+                        const lineSeries = chart.addLineSeries({
+                            color: color,
+                            lineWidth: 2,
+                            lineStyle: LightweightCharts.LineStyle.Dashed,
+                            priceLineVisible: false,
+                            lastValueVisible: true,
+                            title: '#' + pattern.rank + ' ' + pattern.pattern_name,
+                        });
+                        
+                        const now = Math.floor(Date.now() / 1000);
+                        const future = now + 14 * 24 * 60 * 60;
+                        
+                        lineSeries.setData([
+                            { time: now, value: currentPrice },
+                            { time: future, value: pattern.target_price },
+                        ]);
+                    }
+                });
+            }
+            
+            // パターンカードを生成
+            function renderPatternCards(patterns) {
+                const grid = document.getElementById('patterns-grid');
+                grid.innerHTML = '';
+                
+                patterns.forEach(pattern => {
+                    const card = document.createElement('div');
+                    card.className = 'pattern-card ' + pattern.direction;
+                    
+                    const emoji = pattern.direction === 'bullish' ? '📈' : '📉';
+                    const prob = (pattern.probability * 100).toFixed(0);
+                    const targetPrice = pattern.target_price ? '$' + pattern.target_price.toLocaleString() : '--';
+                    const entryPrice = pattern.key_levels && pattern.key_levels.entry ? '$' + pattern.key_levels.entry.toLocaleString() : '--';
+                    const stopLoss = pattern.key_levels && pattern.key_levels.stop_loss ? '$' + pattern.key_levels.stop_loss.toLocaleString() : '--';
+                    
+                    card.innerHTML = 
+                        '<div class="pattern-header">' +
+                            '<span class="pattern-rank">#' + pattern.rank + '</span>' +
+                            '<span class="pattern-name">' + emoji + ' ' + pattern.pattern_name + '</span>' +
+                            '<span class="pattern-probability">' + prob + '%</span>' +
+                        '</div>' +
+                        '<div class="pattern-details">' +
+                            '<div class="detail-item"><span class="detail-label">目標価格</span><span>' + targetPrice + '</span></div>' +
+                            '<div class="detail-item"><span class="detail-label">期間</span><span>' + (pattern.timeframe || '--') + '</span></div>' +
+                            '<div class="detail-item"><span class="detail-label">エントリー</span><span>' + entryPrice + '</span></div>' +
+                            '<div class="detail-item"><span class="detail-label">ストップロス</span><span>' + stopLoss + '</span></div>' +
+                        '</div>' +
+                        '<div class="pattern-reasoning">' + (pattern.reasoning || '') + '</div>';
+                    
+                    grid.appendChild(card);
+                });
+            }
+            
+            // Bybitから価格データを取得
+            async function fetchCandleData() {
+                try {
+                    const response = await fetch(
+                        'https://api.bybit.com/v5/market/kline?category=spot&symbol=BTCUSDT&interval=D&limit=100'
+                    );
+                    const data = await response.json();
+                    
+                    if (data.retCode === 0) {
+                        const candles = data.result.list.map(function(item) {
+                            return {
+                                time: parseInt(item[0]) / 1000,
+                                open: parseFloat(item[1]),
+                                high: parseFloat(item[2]),
+                                low: parseFloat(item[3]),
+                                close: parseFloat(item[4]),
+                            };
+                        }).reverse();
+                        
+                        candleSeries.setData(candles);
+                        return candles[candles.length - 1].close;
+                    }
+                } catch (error) {
+                    console.error('Failed to fetch candle data:', error);
+                }
+                return null;
+            }
+            
+            // 予測データを取得
+            async function fetchPredictionData() {
+                try {
+                    const response = await fetch('prediction.json?' + Date.now());
+                    if (!response.ok) throw new Error('Prediction data not found');
+                    return await response.json();
+                } catch (error) {
+                    console.error('Failed to fetch prediction data:', error);
+                    return null;
+                }
+            }
+            
+            // 初期化
+            async function init() {
+                const currentPrice = await fetchCandleData();
+                const prediction = await fetchPredictionData();
+                
+                if (prediction) {
+                    document.getElementById('current-price').textContent = 
+                        '$' + (prediction.current_price || currentPrice || 0).toLocaleString();
+                    
+                    if (prediction.timestamp) {
+                        const date = new Date(prediction.timestamp);
+                        document.getElementById('timestamp').textContent = 
+                            '更新: ' + date.toLocaleString('ja-JP');
+                    }
+                    
+                    document.getElementById('summary-text').textContent = 
+                        prediction.summary || '分析データなし';
+                    
+                    if (prediction.patterns && prediction.patterns.length > 0) {
+                        renderPatternCards(prediction.patterns);
+                        addPredictionLines(prediction.patterns, prediction.current_price || currentPrice);
+                    }
+                    
+                    // ツイートテキストを生成して表示
+                    const tweetText = generateTweetText(prediction);
+                    document.getElementById('tweet-content').textContent = tweetText;
+                    document.getElementById('char-count').textContent = '文字数: ' + tweetText.length + ' / 280';
+                } else {
+                    document.getElementById('patterns-grid').innerHTML = 
+                        '<div class="error">予測データの読み込みに失敗しました。</div>';
+                }
+                
+                if (currentPrice) {
+                    document.getElementById('current-price').textContent = 
+                        '$' + currentPrice.toLocaleString();
+                }
+                
+                chart.timeScale().fitContent();
+            }
+            
+            // 実行
+            init().catch(function(err) {
+                console.error('Init error:', err);
+                document.getElementById('patterns-grid').innerHTML = 
+                    '<div class="error">初期化エラー: ' + err.message + '</div>';
+            });
+            
+            // ウィンドウリサイズ対応
+            window.addEventListener('resize', function() {
+                chart.applyOptions({
+                    width: chartContainer.clientWidth,
+                });
+            });
+        }; // window.onload end
+    </script>
+</body>
+</html>
