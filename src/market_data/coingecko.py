@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any
 
 import httpx
+import pandas as pd
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from config.settings import settings
@@ -260,6 +261,143 @@ class CoinGeckoClient:
             logger.error(f"Failed to fetch global market data: {e}")
             return {}
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+    )
+    def get_ohlc_data(self, days: int = 365) -> list[list[float]] | None:
+        """ビットコインのOHLCデータを取得.
+
+        CoinGecko OHLC APIを使用してローソク足データを取得する。
+        
+        注意: CoinGeckoのOHLCは日数によって粒度が変わる
+        - 1-2日: 30分足
+        - 3-30日: 4時間足
+        - 31-90日: 4時間足
+        - 91日以上: 日足
+
+        Args:
+            days: 取得する日数 (1, 7, 14, 30, 90, 180, 365, max)
+
+        Returns:
+            OHLCデータのリスト [[timestamp, open, high, low, close], ...]
+            取得失敗時はNone
+        """
+        try:
+            with httpx.Client(timeout=30) as client:
+                response = client.get(
+                    f"{self._base_url}/coins/bitcoin/ohlc",
+                    params={
+                        "vs_currency": "usd",
+                        "days": str(days),
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+
+            if not data or not isinstance(data, list):
+                logger.warning("CoinGecko OHLC: No data returned")
+                return None
+
+            logger.info(f"Fetched {len(data)} OHLC candles from CoinGecko")
+            return data
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"CoinGecko OHLC API error: {e.response.status_code}")
+            return None
+        except Exception as e:
+            logger.error(f"Failed to fetch CoinGecko OHLC data: {e}")
+            return None
+
+    def get_ohlc_dataframe(self, days: int = 365) -> pd.DataFrame | None:
+        """ビットコインのOHLCデータをDataFrame形式で取得.
+
+        テクニカル指標計算に使える形式でOHLCデータを返す。
+        
+        注意: CoinGeckoのOHLCは日数によって粒度が変わる
+        - 1-2日: 30分足
+        - 3-30日: 4時間足
+        - 31-90日: 4時間足
+        - 91日以上: 日足
+
+        Args:
+            days: 取得する日数 (1, 7, 14, 30, 90, 180, 365, max)
+
+        Returns:
+            OHLCVデータを含むDataFrame (columns: timestamp, open, high, low, close, volume)
+            取得失敗時はNone
+        """
+        ohlc_data = self.get_ohlc_data(days=days)
+        if ohlc_data is None:
+            return None
+
+        try:
+            # CoinGecko OHLC: [[timestamp_ms, open, high, low, close], ...]
+            df = pd.DataFrame(
+                ohlc_data, columns=["timestamp_ms", "open", "high", "low", "close"]
+            )
+            
+            # タイムスタンプをdatetimeに変換
+            df["timestamp"] = pd.to_datetime(df["timestamp_ms"], unit="ms", utc=True)
+            df = df.drop(columns=["timestamp_ms"])
+            
+            # CoinGecko OHLCには出来高がないため、0で埋める
+            # 出来高は後でmarket_chartから取得して補完も可能
+            df["volume"] = 0.0
+            
+            # 列の順序を整理
+            df = df[["timestamp", "open", "high", "low", "close", "volume"]]
+            
+            # 時系列順にソート
+            df = df.sort_values("timestamp").reset_index(drop=True)
+            
+            logger.info(f"Created OHLC DataFrame with {len(df)} rows")
+            return df
+
+        except Exception as e:
+            logger.error(f"Failed to create OHLC DataFrame: {e}")
+            return None
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+    )
+    def get_market_chart(self, days: int = 365) -> dict[str, Any] | None:
+        """ビットコインの詳細価格履歴を取得.
+
+        OHLCよりも詳細なデータ（価格、時価総額、取引量）を取得できる。
+
+        Args:
+            days: 取得する日数
+
+        Returns:
+            価格履歴データ {'prices': [...], 'market_caps': [...], 'total_volumes': [...]}
+            取得失敗時はNone
+        """
+        try:
+            with httpx.Client(timeout=60) as client:
+                response = client.get(
+                    f"{self._base_url}/coins/bitcoin/market_chart",
+                    params={
+                        "vs_currency": "usd",
+                        "days": str(days),
+                        "interval": "daily",
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+
+            prices_count = len(data.get("prices", []))
+            logger.info(f"Fetched {prices_count} price points from CoinGecko market_chart")
+            return data
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"CoinGecko market_chart API error: {e.response.status_code}")
+            return None
+        except Exception as e:
+            logger.error(f"Failed to fetch CoinGecko market_chart data: {e}")
+            return None
+
     def get_market_summary(self) -> str:
         """市場サマリーを生成.
 
@@ -281,7 +419,7 @@ class CoinGeckoClient:
             parts.append("")
 
         if global_data:
-            parts.append(f"仮想通貨市場全体:")
+            parts.append("仮想通貨市場全体:")
             parts.append(f"  時価総額: ${global_data.get('total_market_cap_usd', 0) / 1e12:.2f}兆ドル")
             parts.append(f"  BTCドミナンス: {global_data.get('btc_dominance', 0):.1f}%")
             parts.append(f"  24h市場変動: {global_data.get('market_cap_change_24h', 0):+.2f}%")

@@ -173,7 +173,7 @@ class TradingViewWebhook:
             アラートメッセージ
         """
         lines = [
-            f"🪙 BTC AI分析レポート",
+            "🪙 BTC AI分析レポート",
             f"現在価格: ${current_price:,.0f}",
             f"分析日時: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
             "",

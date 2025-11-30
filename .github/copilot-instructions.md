@@ -9,12 +9,12 @@ X/Twitterの過去投稿はPineconeに保存し、類似状況での分析スタ
 ## 技術スタック
 
 - **言語**: Python 3.11+
-- **価格データ**: Bybit API (pybit)
+- **価格データ**: CoinGecko API（価格・OHLC・市場データ）
 - **AI分析**: OpenAI API (GPT-4o)
 - **ベクトルDB**: Pinecone（ユーザーのX投稿類似検索・分析スタイル学習）
 - **X投稿取得**: Twitter/X API (tweepy) - 読み取りのみ
 - **チャート表示**: TradingView Lightweight Charts
-- **ホスティング**: XSERVER (SFTP経由)
+- **ホスティング**: XSERVER (FTP経由)
 - **市場データ**: CryptoCompare, CoinGecko, Fear & Greed Index
 - **マクロ経済**: Alpha Vantage, Polygon.io, Finnhub, FRED
 
@@ -139,11 +139,12 @@ async def fetch_price_data():
 }
 ```
 
-## XSERVER SFTP アップロード
+## XSERVER FTP アップロード
 
-- 秘密鍵認証でSFTP接続
+- FTPでセキュアに接続（ftplib使用）
 - JSON + HTMLを自動アップロード
 - TradingView Lightweight Chartsでチャート描画
+- 日付別アーカイブ機能付き（predictions/YYYY-MM-DD.json）
 
 ## テスト
 
@@ -204,3 +205,57 @@ logger.info("API call successful")
 # ❌ Bad - センシティブ情報をログ出力（禁止）
 logger.info(f"Using API key: {api_key}")
 ```
+
+## 🔄 大きな変更後のルーティン
+
+> **以下の作業は大きな変更後に必ず実行すること**
+
+ユーザーから「大きめの変更だったので、プロジェクト全体のチェックとリファクタリングをお願いします」と依頼された場合、以下の手順を実行：
+
+### 1. コード品質チェック
+
+```bash
+# Ruff でlintチェック
+python -m ruff check src/ scripts/ config/ --ignore E402
+
+# 自動修正
+python -m ruff check src/ scripts/ config/ --fix --ignore E402
+```
+
+### 2. 型チェック
+
+```bash
+# エディタの診断を確認
+# get_errors ツールで全ファイルのエラーを確認
+```
+
+### 3. ドキュメント更新
+
+以下のファイルを更新：
+- `.github/README.md` - システム構成図、技術スタック、フロー図
+- `.github/copilot-instructions.md` - 技術スタック、接続方式など
+
+更新が必要な箇所：
+- 新しいAPI/データソースの追加
+- 接続方式の変更（SFTP→FTPなど）
+- アーキテクチャの変更
+
+### 4. 変更のコミット
+
+```bash
+# 変更を確認
+git status
+git diff
+
+# コミット（Conventional Commits形式）
+git add -A
+git commit -m "refactor: プロジェクト全体のチェックとリファクタリング"
+
+# プッシュ
+git push origin main
+```
+
+### 5. GitHub Actions確認（必要に応じて）
+
+- ワークフローの手動実行でテスト
+- エラーがあればログを確認して修正

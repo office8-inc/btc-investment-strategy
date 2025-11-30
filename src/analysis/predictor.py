@@ -236,7 +236,7 @@ class Predictor:
 
         prompt_parts.extend([
             "",
-            f"## 出力要件",
+            "## 出力要件",
             f"- {num_patterns}個の異なる価格シナリオを生成",
             f"- 予測期間: {', '.join(timeframes)}",
             "- 各シナリオには確率、目標価格、根拠、重要価格レベルを含める",

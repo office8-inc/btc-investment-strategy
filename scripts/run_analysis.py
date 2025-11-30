@@ -4,8 +4,8 @@
 予測結果をWebページにアップロードする。
 
 データソース:
+- CoinGecko: 価格・OHLC・市場データ
 - CryptoCompare: 仮想通貨ニュース
-- CoinGecko: 市場データ、トレンドコイン
 - Fear & Greed Index: 市場センチメント
 - Alpha Vantage: 米国株式市場データ
 - FRED: マクロ経済指標
@@ -14,7 +14,6 @@
 - Pinecone: ユーザーの過去投稿から類似分析を検索
 """
 
-import logging
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -28,7 +27,6 @@ from config.settings import settings
 from src.analysis.fundamental import FundamentalAnalyzer
 from src.analysis.predictor import Predictor
 from src.analysis.technical import TechnicalAnalyzer
-from src.data.bybit_client import BybitClient
 from src.data.ohlcv import add_technical_indicators
 from src.macro_data.alpha_vantage import AlphaVantageClient
 from src.macro_data.finnhub import FinnhubClient
@@ -70,32 +68,35 @@ def run_analysis() -> None:
     logger.info("=" * 60)
 
     # ==================== 1. データ収集 ====================
-    logger.info("Step 1: 価格データ収集")
+    logger.info("Step 1: 価格データ収集（CoinGecko）")
 
-    # Bybit から価格データを取得
-    bybit = BybitClient()
-    current_price = bybit.get_current_price()
-    logger.info(f"現在のBTC価格: ${current_price:,.2f}")
+    # CoinGecko から市場データを取得
+    coingecko = CoinGeckoClient()
+    btc_market_data = coingecko.get_bitcoin_market_data()
 
-    # 複数時間足のデータを取得
-    multi_tf_data = bybit.get_multi_timeframe_data(
-        timeframes=["D", "W", "M"],
-        lookback_days=365,
-    )
+    if btc_market_data:
+        current_price = btc_market_data.price_usd
+        logger.info(f"現在のBTC価格: ${current_price:,.2f}")
+    else:
+        logger.error("CoinGeckoからBTC価格を取得できませんでした")
+        raise RuntimeError("BTC価格の取得に失敗しました")
 
-    # 日足データにテクニカル指標を追加
-    df_daily = multi_tf_data["D"]
-    if len(df_daily) >= 200:
+    # CoinGecko から OHLC データを取得
+    df_daily = coingecko.get_ohlc_dataframe(days=365)
+    if df_daily is not None and len(df_daily) >= 200:
         df_daily = add_technical_indicators(df_daily)
-    logger.info(f"日足データ: {len(df_daily)}本取得")
+    logger.info(f"日足データ: {len(df_daily) if df_daily is not None else 0}本取得")
+
+    if df_daily is None or len(df_daily) == 0:
+        logger.error("OHLCデータを取得できませんでした")
+        raise RuntimeError("OHLCデータの取得に失敗しました")
 
     # ==================== 2. 市場データ収集 ====================
     logger.info("Step 2: 市場データ収集（CoinGecko, Fear & Greed）")
 
     market_context_parts = []
 
-    # CoinGecko 市場データ
-    coingecko = CoinGeckoClient()
+    # CoinGecko 市場データ（既に取得済みのcoingeckoインスタンスを使用）
     market_summary = coingecko.get_market_summary()
     logger.info("CoinGecko市場データ取得完了")
     market_context_parts.append(market_summary)

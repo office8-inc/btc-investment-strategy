@@ -39,9 +39,6 @@ jobs:
       - name: Create .env file
         run: |
           cat > .env << EOF
-          # Bybit API (公開APIのみ使用)
-          BYBIT_BASE_URL=https://api.bybit.com
-          
           # OpenAI API
           OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL=gpt-4o

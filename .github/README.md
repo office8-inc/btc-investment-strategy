@@ -8,8 +8,9 @@ AIによるビットコインのテクニカル・ファンダメンタル分析
 |------|------|
 | **目的** | BTC価格の将来予測パターンを自動分析・可視化 |
 | **分析手法** | テクニカル分析 + ファンダメンタル分析 + 過去パターンマッチング |
+| **価格データ** | CoinGecko API |
 | **出力** | Webページに10パターンの予想チャート（確率順） |
-| **ホスティング** | XSERVER（SFTP自動アップロード） |
+| **ホスティング** | XSERVER（FTP自動アップロード） |
 | **実行頻度** | 毎日朝9時（日足確定後） |
 | **対象時間足** | 日足・週足・月足 |
 
@@ -18,10 +19,9 @@ AIによるビットコインのテクニカル・ファンダメンタル分析
 ```mermaid
 flowchart TB
     subgraph DataCollection["📊 データ収集層"]
-        Bybit["Bybit API<br/>価格データ (OHLCV)"]
+        CoinGecko["CoinGecko<br/>価格・OHLC・市場データ"]
         Twitter["Twitter/X API<br/>@DriftSeiya 投稿"]
         CryptoNews["CryptoCompare<br/>仮想通貨ニュース"]
-        CoinGecko["CoinGecko<br/>市場データ・トレンド"]
         FearGreed["Fear & Greed Index<br/>市場センチメント"]
         AlphaVantage["Alpha Vantage<br/>米国株データ"]
         Polygon["Polygon.io<br/>金融市場データ"]
@@ -43,14 +43,13 @@ flowchart TB
 
     subgraph Output["📈 出力層"]
         JSON["JSON出力<br/>予測データ"]
-        XSERVER["XSERVER<br/>SFTP自動アップロード"]
+        XSERVER["XSERVER<br/>FTP自動アップロード"]
         WebChart["Webページ<br/>TradingView Lightweight Charts"]
     end
 
-    Bybit --> OpenAI
+    CoinGecko --> OpenAI
     Twitter --> Pinecone
     CryptoNews --> OpenAI
-    CoinGecko --> OpenAI
     FearGreed --> OpenAI
     AlphaVantage --> OpenAI
     Polygon --> OpenAI
@@ -112,7 +111,7 @@ sequenceDiagram
 graph LR
     subgraph Root["📂 ビットコイン投資戦略自動化"]
         subgraph Src["src/"]
-            Data["data/<br/>Bybit API"]
+            Data["data/<br/>OHLCデータ処理"]
             Analysis["analysis/<br/>AI分析"]
             TwitterMod["twitter/<br/>X投稿取得"]
 
@@ -120,7 +119,7 @@ graph LR
             MacroData["macro_data/<br/>マクロ経済"]
             VectorDB["vector_db/<br/>Pinecone"]
             TradingViewMod["tradingview/<br/>JSON出力"]
-            Server["server/<br/>XSERVER SFTP"]
+            Server["server/<br/>XSERVER FTP"]
         end
         
         Config["config/<br/>設定"]
@@ -140,9 +139,8 @@ graph LR
 │   └── copilot-instructions.md
 ├── src/
 │   ├── __init__.py
-│   ├── data/              # Bybit API データ取得
+│   ├── data/              # OHLCデータ処理
 │   │   ├── __init__.py
-│   │   ├── bybit_client.py
 │   │   └── ohlcv.py
 │   ├── analysis/          # AI分析ロジック
 │   │   ├── __init__.py
@@ -155,7 +153,7 @@ graph LR
 │   ├── market_data/       # 市場データ取得
 │   │   ├── __init__.py
 │   │   ├── cryptocompare.py  # CryptoCompare ニュース
-│   │   ├── coingecko.py      # CoinGecko 市場データ
+│   │   ├── coingecko.py      # CoinGecko 価格・OHLC・市場データ
 │   │   └── fear_greed.py     # Fear & Greed Index
 │   ├── macro_data/        # マクロ経済データ取得
 │   │   ├── __init__.py
@@ -169,7 +167,7 @@ graph LR
 │   ├── tradingview/       # JSON出力・アラート生成
 │   │   ├── __init__.py
 │   │   └── webhook.py
-│   └── server/            # XSERVER SFTP連携
+│   └── server/            # XSERVER FTP連携
 │       ├── __init__.py
 │       └── xserver_uploader.py
 ├── web/                   # Webページテンプレート
