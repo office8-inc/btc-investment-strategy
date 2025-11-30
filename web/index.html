@@ -644,19 +644,21 @@
             
             updateNavButtons();
             
-            // チャートの表示範囲を最長の予測期間まで拡張
-            let maxDays = 14;  // デフォルト
-            if (prediction && prediction.patterns) {
-                prediction.patterns.forEach(p => {
-                    const days = timeframeToDays(p.timeframe);
-                    if (days > maxDays) maxDays = days;
+            // チャートの表示範囲を最長の予測期間まで拡張（データがある場合のみ）
+            if (lastCandleTime) {
+                let maxDays = 14;  // デフォルト
+                if (prediction && prediction.patterns) {
+                    prediction.patterns.forEach(p => {
+                        const days = timeframeToDays(p.timeframe);
+                        if (days > maxDays) maxDays = days;
+                    });
+                }
+                const futureTime = lastCandleTime + maxDays * 24 * 60 * 60;
+                chart.timeScale().setVisibleRange({
+                    from: lastCandleTime - 90 * 24 * 60 * 60,  // 過去90日
+                    to: futureTime,  // 予測期間の最長まで
                 });
             }
-            const futureTime = lastCandleTime + maxDays * 24 * 60 * 60;
-            chart.timeScale().setVisibleRange({
-                from: lastCandleTime - 90 * 24 * 60 * 60,  // 過去90日
-                to: futureTime,  // 予測期間の最長まで
-            });
             
             // ウィンドウリサイズ対応
             window.addEventListener('resize', function() {
