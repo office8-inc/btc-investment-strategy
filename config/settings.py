@@ -99,29 +99,25 @@ class Settings(BaseSettings):
         description="FRED API Key",
     )
 
-    # --- XSERVER SFTP ---
-    XSERVER_SFTP_HOST: str = Field(
+    # --- XSERVER FTP ---
+    XSERVER_FTP_HOST: str = Field(
         default="",
-        description="XSERVER SFTP Host (e.g., office8-inc.xsrv.jp)",
+        description="XSERVER FTP Host (e.g., office8-inc.xsrv.jp)",
     )
-    XSERVER_SFTP_PORT: int = Field(
-        default=10022,
-        description="XSERVER SFTP Port",
+    XSERVER_FTP_PORT: int = Field(
+        default=21,
+        description="XSERVER FTP Port",
     )
-    XSERVER_SFTP_USER: str = Field(
+    XSERVER_FTP_USER: str = Field(
         default="",
-        description="XSERVER SFTP Username",
+        description="XSERVER FTP Username",
     )
-    XSERVER_PRIVATE_KEY_PATH: str = Field(
+    XSERVER_FTP_PASSWORD: str = Field(
         default="",
-        description="Path to SSH private key file",
-    )
-    XSERVER_PASSPHRASE: str = Field(
-        default="",
-        description="Passphrase for SSH private key",
+        description="XSERVER FTP Password",
     )
     XSERVER_REMOTE_DIR: str = Field(
-        default="/home/office8-inc/office8-inc.com/public_html/btc-analysis",
+        default="/office8-inc.com/public_html/btc-analysis",
         description="XSERVER Remote Directory Path",
     )
     XSERVER_PUBLIC_URL: str = Field(
@@ -187,12 +183,12 @@ class Settings(BaseSettings):
 
     @property
     def is_xserver_configured(self) -> bool:
-        """XSERVER SFTPが設定されているか."""
+        """XSERVER FTPが設定されているか."""
         return bool(
-            self.XSERVER_SFTP_HOST
-            and self.XSERVER_SFTP_USER
-            and self.XSERVER_PRIVATE_KEY_PATH
-            and "your_" not in self.XSERVER_SFTP_HOST.lower()
+            self.XSERVER_FTP_HOST
+            and self.XSERVER_FTP_USER
+            and self.XSERVER_FTP_PASSWORD
+            and "your_" not in self.XSERVER_FTP_HOST.lower()
         )
 
 

@@ -1,15 +1,16 @@
-"""XSERVER SFTPアップローダー.
+"""XSERVER FTPアップローダー.
 
 分析結果のJSONとHTMLをXSERVERにアップロードする。
 """
 
+import ftplib
 import json
 import logging
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
-import paramiko
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from config.settings import settings
@@ -18,9 +19,9 @@ logger = logging.getLogger(__name__)
 
 
 class XServerUploader:
-    """XSERVER SFTPアップローダー.
+    """XSERVER FTPアップローダー.
 
-    分析結果をXSERVERにSFTPアップロードし、
+    分析結果をXSERVERにFTPアップロードし、
     Webページで予測チャートを表示できるようにする。
     """
 
@@ -29,72 +30,54 @@ class XServerUploader:
         host: str | None = None,
         port: int | None = None,
         username: str | None = None,
-        private_key_path: str | None = None,
-        passphrase: str | None = None,
+        password: str | None = None,
         remote_dir: str | None = None,
     ) -> None:
         """初期化.
 
         Args:
-            host: SFTPホスト名
-            port: SFTPポート番号
-            username: SFTPユーザー名
-            private_key_path: 秘密鍵ファイルパス
-            passphrase: 秘密鍵のパスフレーズ
+            host: FTPホスト名
+            port: FTPポート番号
+            username: FTPユーザー名
+            password: FTPパスワード
             remote_dir: リモートディレクトリ
         """
-        self._host = host or settings.XSERVER_SFTP_HOST
-        self._port = port or settings.XSERVER_SFTP_PORT
-        self._username = username or settings.XSERVER_SFTP_USER
-        self._private_key_path = private_key_path or settings.XSERVER_PRIVATE_KEY_PATH
-        self._passphrase = passphrase or settings.XSERVER_PASSPHRASE
+        self._host = host or settings.XSERVER_FTP_HOST
+        self._port = port or settings.XSERVER_FTP_PORT
+        self._username = username or settings.XSERVER_FTP_USER
+        self._password = password or settings.XSERVER_FTP_PASSWORD
         self._remote_dir = remote_dir or settings.XSERVER_REMOTE_DIR
 
         self._is_configured = bool(
             self._host
             and self._username
-            and self._private_key_path
+            and self._password
             and "your_" not in self._host.lower()
         )
 
         if not self._is_configured:
             logger.warning(
-                "XSERVER SFTP not configured. "
+                "XSERVER FTP not configured. "
                 "Upload features will not work."
             )
 
-    def _get_sftp_client(self) -> tuple[paramiko.SSHClient, paramiko.SFTPClient]:
-        """SFTP接続を確立.
+    def _get_ftp_client(self) -> ftplib.FTP:
+        """FTP接続を確立.
 
         Returns:
-            (SSHClient, SFTPClient) のタプル
+            FTPクライアント
         """
-        # 秘密鍵を読み込む
-        private_key = paramiko.RSAKey.from_private_key_file(
-            self._private_key_path,
-            password=self._passphrase if self._passphrase else None,
-        )
+        ftp = ftplib.FTP()
+        ftp.connect(self._host, self._port)
+        ftp.login(self._username, self._password)
+        ftp.encoding = "utf-8"
+        return ftp
 
-        # SSH接続
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(
-            hostname=self._host,
-            port=self._port,
-            username=self._username,
-            pkey=private_key,
-        )
-
-        # SFTP接続
-        sftp = ssh.open_sftp()
-
-        return ssh, sftp
-
-    def _ensure_remote_dir(self, sftp: paramiko.SFTPClient, path: str | None = None) -> None:
+    def _ensure_remote_dir(self, ftp: ftplib.FTP, path: str | None = None) -> None:
         """リモートディレクトリが存在することを確認.
 
         Args:
-            sftp: SFTPクライアント
+            ftp: FTPクライアント
             path: ディレクトリパス（未指定時はself._remote_dir）
         """
         target_dir = path or self._remote_dir
@@ -110,12 +93,12 @@ class XServerUploader:
                 continue
             current_path = f"{current_path}/{part}"
             try:
-                sftp.stat(current_path)
-            except FileNotFoundError:
+                ftp.cwd(current_path)
+            except ftplib.error_perm:
                 try:
-                    sftp.mkdir(current_path)
+                    ftp.mkd(current_path)
                     logger.info(f"Created directory: {current_path}")
-                except Exception:
+                except ftplib.error_perm:
                     pass  # ディレクトリが既に存在する場合
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
@@ -134,21 +117,21 @@ class XServerUploader:
             成功した場合True
         """
         if not self._is_configured:
-            logger.error("XSERVER SFTP not configured")
+            logger.error("XSERVER FTP not configured")
             return False
 
-        ssh = None
-        sftp = None
+        ftp = None
 
         try:
             # JSONを文字列に変換
             json_str = json.dumps(data, ensure_ascii=False, indent=2)
+            json_bytes = json_str.encode("utf-8")
 
-            # SFTP接続
-            ssh, sftp = self._get_sftp_client()
+            # FTP接続
+            ftp = self._get_ftp_client()
 
             # ディレクトリ確認・作成
-            self._ensure_remote_dir(sftp)
+            self._ensure_remote_dir(ftp)
 
             # リモートパス
             remote_path = f"{self._remote_dir}/{filename}" if self._remote_dir else filename
@@ -157,26 +140,23 @@ class XServerUploader:
             if "/" in filename:
                 subdir = filename.rsplit("/", 1)[0]
                 full_subdir = f"{self._remote_dir}/{subdir}" if self._remote_dir else subdir
-                self._ensure_remote_dir(sftp, full_subdir)
+                self._ensure_remote_dir(ftp, full_subdir)
 
             # アップロード
-            with sftp.file(remote_path, "w") as f:
-                f.write(json_str)
+            ftp.storbinary(f"STOR {remote_path}", BytesIO(json_bytes))
 
-            logger.info(f"Uploaded {filename} to XSERVER via SFTP")
+            logger.info(f"Uploaded {filename} to XSERVER via FTP")
             return True
 
-        except paramiko.SSHException as e:
-            logger.error(f"SSH/SFTP error: {e}")
+        except ftplib.all_errors as e:
+            logger.error(f"FTP error: {e}")
             return False
         except Exception as e:
             logger.error(f"Failed to upload JSON: {e}")
             return False
         finally:
-            if sftp:
-                sftp.close()
-            if ssh:
-                ssh.close()
+            if ftp:
+                ftp.quit()
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     def upload_file(
@@ -194,7 +174,7 @@ class XServerUploader:
             成功した場合True
         """
         if not self._is_configured:
-            logger.error("XSERVER SFTP not configured")
+            logger.error("XSERVER FTP not configured")
             return False
 
         local_path = Path(local_path)
@@ -204,15 +184,14 @@ class XServerUploader:
 
         remote_filename = remote_filename or local_path.name
 
-        ssh = None
-        sftp = None
+        ftp = None
 
         try:
-            # SFTP接続
-            ssh, sftp = self._get_sftp_client()
+            # FTP接続
+            ftp = self._get_ftp_client()
 
             # ディレクトリ確認・作成
-            self._ensure_remote_dir(sftp)
+            self._ensure_remote_dir(ftp)
 
             # リモートパス
             remote_path = f"{self._remote_dir}/{remote_filename}" if self._remote_dir else remote_filename
@@ -221,25 +200,24 @@ class XServerUploader:
             if "/" in remote_filename:
                 subdir = remote_filename.rsplit("/", 1)[0]
                 full_subdir = f"{self._remote_dir}/{subdir}" if self._remote_dir else subdir
-                self._ensure_remote_dir(sftp, full_subdir)
+                self._ensure_remote_dir(ftp, full_subdir)
 
             # アップロード
-            sftp.put(str(local_path), remote_path)
+            with open(local_path, "rb") as f:
+                ftp.storbinary(f"STOR {remote_path}", f)
 
-            logger.info(f"Uploaded {remote_filename} to XSERVER via SFTP")
+            logger.info(f"Uploaded {remote_filename} to XSERVER via FTP")
             return True
 
-        except paramiko.SSHException as e:
-            logger.error(f"SSH/SFTP error: {e}")
+        except ftplib.all_errors as e:
+            logger.error(f"FTP error: {e}")
             return False
         except Exception as e:
             logger.error(f"Failed to upload file: {e}")
             return False
         finally:
-            if sftp:
-                sftp.close()
-            if ssh:
-                ssh.close()
+            if ftp:
+                ftp.quit()
 
     def upload_prediction_page(
         self,
@@ -330,21 +308,20 @@ class XServerUploader:
             logger.warning("XSERVER not configured, skipping archive upload")
             return True  # 設定がない場合はスキップ（エラーではない）
 
-        ssh = None
-        sftp = None
+        ftp = None
 
         try:
-            ssh, sftp = self._get_sftp_client()
+            ftp = self._get_ftp_client()
 
             # predictions ディレクトリを作成
             predictions_dir = f"{self._remote_dir}/predictions" if self._remote_dir else "predictions"
-            self._ensure_remote_dir(sftp, predictions_dir)
+            self._ensure_remote_dir(ftp, predictions_dir)
 
             # 日付別JSONをアップロード
             date_json_path = f"{predictions_dir}/{date_str}.json"
             json_str = json.dumps(data, ensure_ascii=False, indent=2)
-            with sftp.file(date_json_path, "w") as f:
-                f.write(json_str)
+            json_bytes = json_str.encode("utf-8")
+            ftp.storbinary(f"STOR {date_json_path}", BytesIO(json_bytes))
             logger.info(f"Uploaded prediction archive: {date_str}.json")
 
             # index.json を更新（既存の日付リストを読み込み）
@@ -352,10 +329,13 @@ class XServerUploader:
             dates = []
 
             try:
-                with sftp.file(index_path, "r") as f:
-                    index_data = json.load(f)
-                    dates = index_data.get("dates", [])
-            except FileNotFoundError:
+                # 既存のindex.jsonを読み込み
+                buffer = BytesIO()
+                ftp.retrbinary(f"RETR {index_path}", buffer.write)
+                buffer.seek(0)
+                index_data = json.loads(buffer.read().decode("utf-8"))
+                dates = index_data.get("dates", [])
+            except ftplib.error_perm:
                 logger.info("Creating new predictions index.json")
 
             # 今日の日付を追加（重複回避）
@@ -369,8 +349,8 @@ class XServerUploader:
                 "dates": dates,
             }
             index_str = json.dumps(index_data, ensure_ascii=False, indent=2)
-            with sftp.file(index_path, "w") as f:
-                f.write(index_str)
+            index_bytes = index_str.encode("utf-8")
+            ftp.storbinary(f"STOR {index_path}", BytesIO(index_bytes))
             logger.info(f"Updated predictions index.json with {len(dates)} dates")
 
             return True
@@ -379,10 +359,8 @@ class XServerUploader:
             logger.error(f"Failed to upload prediction archive: {e}")
             return False
         finally:
-            if sftp:
-                sftp.close()
-            if ssh:
-                ssh.close()
+            if ftp:
+                ftp.quit()
 
     def get_public_url(self, filename: str = "index.html") -> str:
         """公開URLを取得.

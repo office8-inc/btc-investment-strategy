@@ -36,13 +36,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Setup SSH key for XSERVER
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.XSERVER_PRIVATE_KEY }}" > ~/.ssh/xserver_key
-          chmod 600 ~/.ssh/xserver_key
-          ssh-keyscan -p 10022 ${{ secrets.XSERVER_SFTP_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
-
       - name: Create .env file
         run: |
           cat > .env << EOF
@@ -67,12 +60,11 @@ jobs:
           FINNHUB_API_KEY=${{ secrets.FINNHUB_API_KEY }}
           FRED_API_KEY=${{ secrets.FRED_API_KEY }}
           
-          # XSERVER SFTP
-          XSERVER_SFTP_HOST=${{ secrets.XSERVER_SFTP_HOST }}
-          XSERVER_SFTP_PORT=10022
-          XSERVER_SFTP_USER=${{ secrets.XSERVER_SFTP_USER }}
-          XSERVER_PRIVATE_KEY_PATH=~/.ssh/xserver_key
-          XSERVER_PASSPHRASE=${{ secrets.XSERVER_PASSPHRASE }}
+          # XSERVER FTP
+          XSERVER_FTP_HOST=${{ secrets.XSERVER_FTP_HOST }}
+          XSERVER_FTP_PORT=21
+          XSERVER_FTP_USER=${{ secrets.XSERVER_FTP_USER }}
+          XSERVER_FTP_PASSWORD=${{ secrets.XSERVER_FTP_PASSWORD }}
           XSERVER_REMOTE_DIR=${{ secrets.XSERVER_REMOTE_DIR }}
           XSERVER_PUBLIC_URL=${{ secrets.XSERVER_PUBLIC_URL }}
           
