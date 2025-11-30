@@ -119,9 +119,15 @@
         
         .patterns-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            grid-template-columns: repeat(2, 1fr);
             gap: 15px;
             margin-bottom: 20px;
+        }
+        
+        @media (max-width: 900px) {
+            .patterns-grid {
+                grid-template-columns: 1fr;
+            }
         }
         
         .pattern-card {
