@@ -90,17 +90,19 @@ class XServerUploader:
 
         return ssh, sftp
 
-    def _ensure_remote_dir(self, sftp: paramiko.SFTPClient) -> None:
+    def _ensure_remote_dir(self, sftp: paramiko.SFTPClient, path: str | None = None) -> None:
         """リモートディレクトリが存在することを確認.
 
         Args:
             sftp: SFTPクライアント
+            path: ディレクトリパス（未指定時はself._remote_dir）
         """
-        if not self._remote_dir:
+        target_dir = path or self._remote_dir
+        if not target_dir:
             return
 
         # ディレクトリを階層的に作成
-        parts = self._remote_dir.split("/")
+        parts = target_dir.split("/")
         current_path = ""
 
         for part in parts:
@@ -236,6 +238,7 @@ class XServerUploader:
         """予測結果ページをアップロード.
 
         JSONデータと表示用HTMLをアップロードする。
+        日付別アーカイブも保存し、過去予測を参照可能にする。
 
         Args:
             patterns: 予測パターンリスト
@@ -264,16 +267,23 @@ class XServerUploader:
             else:
                 pattern_dicts.append(p)
 
+        # 現在の日付
+        today = datetime.now().strftime("%Y-%m-%d")
+
         # JSONデータを作成
         data = {
+            "date": today,
             "timestamp": datetime.now().isoformat(),
             "current_price": current_price,
             "summary": analysis_summary,
             "patterns": pattern_dicts,
         }
 
-        # JSONをアップロード
+        # 最新JSONをアップロード
         json_success = self.upload_json(data, "prediction.json")
+
+        # 日付別アーカイブをアップロード
+        archive_success = self._upload_prediction_archive(data, today)
 
         # HTMLをアップロード（初回のみ、または更新時）
         html_path = Path(__file__).parent.parent.parent / "web" / "index.html"
@@ -283,9 +293,84 @@ class XServerUploader:
             logger.warning(f"HTML template not found: {html_path}")
             html_success = True  # HTMLがなくてもJSONアップロードは成功
 
-        if json_success and html_success:
+        if json_success and html_success and archive_success:
             return self.get_public_url()
         return None
+
+    def _upload_prediction_archive(
+        self,
+        data: dict[str, Any],
+        date_str: str,
+    ) -> bool:
+        """日付別予測アーカイブをアップロード.
+
+        predictions/{YYYY-MM-DD}.json に保存し、
+        predictions/index.json に日付リストを更新する。
+
+        Args:
+            data: 予測データ
+            date_str: 日付文字列 (YYYY-MM-DD)
+
+        Returns:
+            成功した場合True
+        """
+        if not self._is_configured:
+            logger.warning("XSERVER not configured, skipping archive upload")
+            return True  # 設定がない場合はスキップ（エラーではない）
+
+        ssh = None
+        sftp = None
+
+        try:
+            ssh, sftp = self._get_sftp_client()
+
+            # predictions ディレクトリを作成
+            predictions_dir = f"{self._remote_dir}/predictions" if self._remote_dir else "predictions"
+            self._ensure_remote_dir(sftp, predictions_dir)
+
+            # 日付別JSONをアップロード
+            date_json_path = f"{predictions_dir}/{date_str}.json"
+            json_str = json.dumps(data, ensure_ascii=False, indent=2)
+            with sftp.file(date_json_path, "w") as f:
+                f.write(json_str)
+            logger.info(f"Uploaded prediction archive: {date_str}.json")
+
+            # index.json を更新（既存の日付リストを読み込み）
+            index_path = f"{predictions_dir}/index.json"
+            dates = []
+
+            try:
+                with sftp.file(index_path, "r") as f:
+                    index_data = json.load(f)
+                    dates = index_data.get("dates", [])
+            except FileNotFoundError:
+                logger.info("Creating new predictions index.json")
+
+            # 今日の日付を追加（重複回避）
+            if date_str not in dates:
+                dates.append(date_str)
+                dates.sort(reverse=True)  # 新しい順
+
+            # index.jsonをアップロード
+            index_data = {
+                "updated_at": datetime.now().isoformat(),
+                "dates": dates,
+            }
+            index_str = json.dumps(index_data, ensure_ascii=False, indent=2)
+            with sftp.file(index_path, "w") as f:
+                f.write(index_str)
+            logger.info(f"Updated predictions index.json with {len(dates)} dates")
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to upload prediction archive: {e}")
+            return False
+        finally:
+            if sftp:
+                sftp.close()
+            if ssh:
+                ssh.close()
 
     def get_public_url(self, filename: str = "index.html") -> str:
         """公開URLを取得.
