@@ -153,6 +153,12 @@ class XServerUploader:
             # リモートパス
             remote_path = f"{self._remote_dir}/{filename}" if self._remote_dir else filename
 
+            # サブディレクトリがある場合は作成
+            if "/" in filename:
+                subdir = filename.rsplit("/", 1)[0]
+                full_subdir = f"{self._remote_dir}/{subdir}" if self._remote_dir else subdir
+                self._ensure_remote_dir(sftp, full_subdir)
+
             # アップロード
             with sftp.file(remote_path, "w") as f:
                 f.write(json_str)
@@ -210,6 +216,12 @@ class XServerUploader:
 
             # リモートパス
             remote_path = f"{self._remote_dir}/{remote_filename}" if self._remote_dir else remote_filename
+
+            # サブディレクトリがある場合は作成
+            if "/" in remote_filename:
+                subdir = remote_filename.rsplit("/", 1)[0]
+                full_subdir = f"{self._remote_dir}/{subdir}" if self._remote_dir else subdir
+                self._ensure_remote_dir(sftp, full_subdir)
 
             # アップロード
             sftp.put(str(local_path), remote_path)

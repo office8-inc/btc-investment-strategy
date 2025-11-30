@@ -283,6 +283,7 @@
         let availableDates = [];
         let currentDateIndex = 0;
         let latestPrediction = null;
+        let lastCandleTime = null;  // 最後のローソク足の時刻
         
         // 日付をフォーマット
         function formatDate(dateStr) {
@@ -388,6 +389,12 @@
         function addPredictionLines(patterns, currentPrice) {
             clearPredictionLines();
             
+            // ローソク足データがない場合はスキップ
+            if (!lastCandleTime) {
+                console.log('No candle data, skipping prediction lines');
+                return;
+            }
+            
             patterns.slice(0, 5).forEach((pattern, index) => {
                 const color = pattern.direction === 'bullish' ? '#00d4aa' : '#ff6b6b';
                 
@@ -401,11 +408,12 @@
                         title: '#' + pattern.rank + ' ' + pattern.pattern_name,
                     });
                     
-                    const now = Math.floor(Date.now() / 1000);
-                    const future = now + 14 * 24 * 60 * 60;
+                    // ローソク足の最後の時刻から予測ラインを開始
+                    const startTime = lastCandleTime;
+                    const future = startTime + 14 * 24 * 60 * 60;  // 14日後
                     
                     lineSeries.setData([
-                        { time: now, value: currentPrice },
+                        { time: startTime, value: currentPrice },
                         { time: future, value: pattern.target_price },
                     ]);
                     
@@ -469,15 +477,19 @@
             }
         }
         
-        // Bybitから価格データを取得
+        // Bybitから価格データを取得（PHPプロキシ経由）
         async function fetchCandleData() {
             try {
-                const response = await fetch(
-                    'https://api.bybit.com/v5/market/kline?category=spot&symbol=BTCUSDT&interval=D&limit=100'
-                );
+                // PHPプロキシ経由でBybit APIにアクセス（CORS回避）
+                const response = await fetch('api/bybit_proxy.php?symbol=BTCUSDT&interval=D&limit=100');
+                
+                if (!response.ok) {
+                    throw new Error('Proxy request failed: ' + response.status);
+                }
+                
                 const data = await response.json();
                 
-                if (data.retCode === 0) {
+                if (data.retCode === 0 && data.result && data.result.list) {
                     const candles = data.result.list.map(function(item) {
                         return {
                             time: parseInt(item[0]) / 1000,
@@ -488,8 +500,13 @@
                         };
                     }).reverse();
                     
-                    candleSeries.setData(candles);
-                    return candles[candles.length - 1].close;
+                    if (candles.length > 0) {
+                        candleSeries.setData(candles);
+                        lastCandleTime = candles[candles.length - 1].time;
+                        return candles[candles.length - 1].close;
+                    }
+                } else if (data.error) {
+                    console.error('Proxy error:', data.error);
                 }
             } catch (error) {
                 console.error('Failed to fetch candle data:', error);
