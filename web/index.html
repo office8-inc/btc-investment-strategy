@@ -395,7 +395,7 @@
                 return;
             }
             
-            patterns.slice(0, 5).forEach((pattern, index) => {
+            patterns.slice(0, 10).forEach((pattern, index) => {
                 const color = pattern.direction === 'bullish' ? '#00d4aa' : '#ff6b6b';
                 
                 if (pattern.target_price) {
@@ -409,13 +409,21 @@
                     });
                     
                     // ローソク足の最後の時刻から予測ラインを開始
+                    // 14日間を日ごとのポイントで描画（14本分の幅で表示）
                     const startTime = lastCandleTime;
-                    const future = startTime + 14 * 24 * 60 * 60;  // 14日後
+                    const days = 14;
+                    const dayInSeconds = 24 * 60 * 60;
+                    const priceChange = pattern.target_price - currentPrice;
                     
-                    lineSeries.setData([
-                        { time: startTime, value: currentPrice },
-                        { time: future, value: pattern.target_price },
-                    ]);
+                    const lineData = [];
+                    for (let i = 0; i <= days; i++) {
+                        lineData.push({
+                            time: startTime + i * dayInSeconds,
+                            value: currentPrice + (priceChange * i / days),
+                        });
+                    }
+                    
+                    lineSeries.setData(lineData);
                     
                     predictionLines.push(lineSeries);
                 }
@@ -587,7 +595,13 @@
             }
             
             updateNavButtons();
-            chart.timeScale().fitContent();
+            
+            // チャートの表示範囲を未来14日分まで拡張
+            const futureTime = lastCandleTime + 14 * 24 * 60 * 60;
+            chart.timeScale().setVisibleRange({
+                from: lastCandleTime - 90 * 24 * 60 * 60,  // 過去90日
+                to: futureTime,  // 未来14日
+            });
             
             // ウィンドウリサイズ対応
             window.addEventListener('resize', function() {
