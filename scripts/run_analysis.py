@@ -169,7 +169,7 @@ def run_analysis() -> None:
     # ==================== 5. 過去類似投稿検索（Pinecone） ====================
     logger.info("Step 5: 過去の類似投稿検索（Pinecone）")
 
-    similar_posts_context = ""
+    similar_posts = []  # 口調学習用
     pinecone_client = PineconeClient()
     if pinecone_client.is_configured:
         # 価格変化率を計算
@@ -197,19 +197,13 @@ def run_analysis() -> None:
         )
 
         if similar_posts:
-            logger.info(f"過去の類似投稿: {len(similar_posts)}件発見")
-            post_summaries = []
-            for post in similar_posts[:3]:
-                post_text = post.get("text", "")[:150]
+            logger.info(f"類似投稿: {len(similar_posts)}件発見")
+            logger.info("→ 類似投稿から口調・スタイルを学習")
+            for post in similar_posts[:5]:
+                post_text = post.get("text", "")[:80]
                 post_date = post.get("created_at", "")[:10]
                 post_score = post.get("score", 0)
-                post_summaries.append(
-                    f"- [{post_date}] (類似度: {post_score:.2f}) {post_text}..."
-                )
-            similar_posts_context = (
-                "【過去の類似状況での私の分析】\n" + "\n".join(post_summaries)
-            )
-            logger.debug(f"類似投稿コンテキスト:\n{similar_posts_context}")
+                logger.info(f"  - [{post_date}] (類似度: {post_score:.2f}) {post_text}...")
         else:
             logger.info("類似する過去投稿なし（データ蓄積中）")
     else:
@@ -256,7 +250,7 @@ def run_analysis() -> None:
     # ==================== 8. AI予測生成 ====================
     logger.info("Step 8: AI予測パターン生成")
 
-    # 統合コンテキストを構築
+    # 統合コンテキストを構築（類似投稿は口調学習用なので除外）
     integrated_context = []
     if market_context:
         integrated_context.append(market_context)
@@ -264,8 +258,6 @@ def run_analysis() -> None:
         integrated_context.append(macro_context)
     if news_summary:
         integrated_context.append(news_summary)
-    if similar_posts_context:
-        integrated_context.append(similar_posts_context)
 
     full_context = "\n\n---\n\n".join(integrated_context) if integrated_context else ""
 
@@ -276,6 +268,7 @@ def run_analysis() -> None:
         timeframes=["1week", "2weeks", "1month"],
         num_patterns=10,
         news_context=full_context,
+        similar_posts=similar_posts[:5] if similar_posts else None,  # 口調学習用
     )
 
     if patterns:

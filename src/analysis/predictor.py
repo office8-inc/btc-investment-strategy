@@ -103,6 +103,7 @@ class Predictor:
         timeframes: list[str] | None = None,
         num_patterns: int = 10,
         news_context: str | None = None,
+        similar_posts: list[dict] | None = None,
     ) -> list[PredictionPattern]:
         """予測パターンを生成.
 
@@ -111,7 +112,8 @@ class Predictor:
             current_price: 現在価格
             timeframes: 予測対象の時間足リスト
             num_patterns: 生成するパターン数
-            news_context: ニュース・ファンダメンタル情報（類似投稿含む）
+            news_context: ニュース・ファンダメンタル情報
+            similar_posts: 類似する過去投稿（口調学習用）
 
         Returns:
             確率順にソートされた予測パターンのリスト
@@ -123,6 +125,11 @@ class Predictor:
         if timeframes is None:
             timeframes = ["1week", "2weeks", "1month"]
 
+        # 類似投稿からスタイル例を抽出
+        style_examples = None
+        if similar_posts:
+            style_examples = self._extract_style_examples(similar_posts)
+
         # プロンプトを構築
         prompt = self._build_prompt(
             technical_analysis=technical_analysis,
@@ -133,7 +140,7 @@ class Predictor:
         )
 
         # プロンプトをログに出力（デバッグ用）
-        system_prompt = self._get_system_prompt()
+        system_prompt = self._get_system_prompt(style_examples)
         logger.info("=" * 80)
         logger.info("【AIプロンプト - システム】")
         logger.info("=" * 80)
@@ -179,9 +186,13 @@ class Predictor:
             logger.error(f"Failed to generate predictions: {e}")
             raise
 
-    def _get_system_prompt(self) -> str:
-        """システムプロンプトを取得."""
-        return """あなたは、ビットコインのテクニカル分析とチャートパターン予測の専門家です。
+    def _get_system_prompt(self, style_examples: str | None = None) -> str:
+        """システムプロンプトを取得.
+        
+        Args:
+            style_examples: 過去投稿から抽出した口調・スタイルの例文
+        """
+        base_prompt = """あなたは、ビットコインのテクニカル分析とチャートパターン予測の専門家です。
 
 以下の役割を担います：
 1. 提供されたテクニカル分析データを解釈する
@@ -195,6 +206,27 @@ class Predictor:
 - 具体的な数値（価格レベル、期間）を必ず含める
 - 根拠は明確かつ具体的に記述する
 - JSONフォーマットで出力する"""
+
+        if style_examples:
+            style_instruction = f"""
+
+【重要】口調・スタイルの指示：
+以下は私（分析者）の過去の投稿例です。この口調・文体・表現スタイルを完全に真似て、reasoningを書いてください。
+
+{style_examples}
+
+上記の投稿から学び取るべきスタイル：
+- 絵文字の使い方（😳🔥💦😅など感情を込める）
+- 語尾の特徴（「〜ですね」「〜感じ」「〜かな？」など）
+- 表現の癖（「激熱」「良い感じに」「そんなに強くない」など率直な表現）
+- 短めの文で要点を伝える
+- 疑問形を交えた自問自答スタイル
+- 相場への独自の視点や皮肉
+
+まるで私自身が分析したかのような文章でreasoningを書いてください。"""
+            return base_prompt + style_instruction
+        
+        return base_prompt
 
     def _build_prompt(
         self,
@@ -318,3 +350,47 @@ class Predictor:
             pattern.rank = i
 
         return patterns
+
+    def _extract_style_examples(self, similar_posts: list[dict]) -> str:
+        """類似投稿から口調・スタイル例を抽出.
+        
+        Args:
+            similar_posts: 類似する過去投稿のリスト
+            
+        Returns:
+            スタイル学習用のテキスト
+        """
+        if not similar_posts:
+            return ""
+        
+        examples = []
+        for i, post in enumerate(similar_posts[:5], 1):
+            text = post.get("text", "")
+            # ハッシュタグとURLを除去してクリーンなテキストを取得
+            clean_text = self._clean_post_text(text)
+            if clean_text:
+                examples.append(f"例{i}: {clean_text}")
+        
+        return "\n".join(examples)
+    
+    def _clean_post_text(self, text: str) -> str:
+        """投稿テキストからハッシュタグとURLを除去.
+        
+        Args:
+            text: 元の投稿テキスト
+            
+        Returns:
+            クリーンなテキスト
+        """
+        import re
+        
+        # URLを除去
+        text = re.sub(r'https?://\S+', '', text)
+        # ハッシュタグを除去（#で始まる単語）
+        text = re.sub(r'#\S+', '', text)
+        # 連続する空白を1つに
+        text = re.sub(r'\s+', ' ', text)
+        # 前後の空白を除去
+        text = text.strip()
+        
+        return text

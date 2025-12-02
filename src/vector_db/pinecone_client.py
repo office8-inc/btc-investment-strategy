@@ -352,7 +352,8 @@ class PineconeClient:
 
         query = " ".join(query_parts)
 
-        return self.search_similar_tweets(query, top_k=5, min_score=0.65)
+        # top_k=10, min_score=0.5 でより多くの投稿をヒットさせる
+        return self.search_similar_tweets(query, top_k=10, min_score=0.5)
 
     def get_similar_posts_for_prediction(
         self,
