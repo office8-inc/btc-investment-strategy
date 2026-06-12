@@ -5,7 +5,8 @@
 
 データソース:
 - CoinGecko: 現在価格・市場データ（時価総額、24h変動など）
-- CryptoCompare: 日足OHLCデータ（365日分）・仮想通貨ニュース
+- Coinbase: 日足OHLCデータ（365日分、認証不要）
+- CryptoCompare: 日足OHLCデータのフォールバック・仮想通貨ニュース
 - Fear & Greed Index: 市場センチメント
 - Alpha Vantage: 米国株式市場データ
 - FRED: マクロ経済指標
@@ -32,6 +33,7 @@ from src.macro_data.alpha_vantage import AlphaVantageClient
 from src.macro_data.finnhub import FinnhubClient
 from src.macro_data.fred import FREDClient
 from src.macro_data.polygon import PolygonClient
+from src.market_data.coinbase import CoinbaseClient
 from src.market_data.coingecko import CoinGeckoClient
 from src.market_data.cryptocompare import CryptoCompareClient
 from src.market_data.fear_greed import FearGreedClient
@@ -69,7 +71,7 @@ def run_analysis() -> None:
     logger.info("=" * 60)
 
     # ==================== 1. データ収集 ====================
-    logger.info("Step 1: 価格データ収集（CoinGecko + CryptoCompare）")
+    logger.info("Step 1: 価格データ収集（CoinGecko + Coinbase）")
 
     # CoinGecko から市場データを取得（現在価格・時価総額など）
     coingecko = CoinGeckoClient()
@@ -82,9 +84,16 @@ def run_analysis() -> None:
         logger.error("CoinGeckoからBTC価格を取得できませんでした")
         raise RuntimeError("BTC価格の取得に失敗しました")
 
-    # CryptoCompare から OHLC データを取得（正確な日足データ）
-    cryptocompare = CryptoCompareClient()
-    df_daily = cryptocompare.get_ohlc_dataframe(days=365)
+    # Coinbase から OHLC データを取得（認証不要・正確な日足データ）
+    # フォールバック: CryptoCompare（2026-06にAPIキー必須化されたため一次から降格）
+    coinbase = CoinbaseClient()
+    df_daily = coinbase.get_ohlc_dataframe(days=365)
+
+    if df_daily is None or len(df_daily) == 0:
+        logger.warning("Coinbaseから取得失敗、CryptoCompareにフォールバック")
+        cryptocompare = CryptoCompareClient()
+        df_daily = cryptocompare.get_ohlc_dataframe(days=365)
+
     if df_daily is not None and len(df_daily) >= 200:
         df_daily = add_technical_indicators(df_daily)
     logger.info(f"日足データ: {len(df_daily) if df_daily is not None else 0}本取得")
