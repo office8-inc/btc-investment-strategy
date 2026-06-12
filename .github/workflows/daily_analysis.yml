@@ -8,6 +8,8 @@ on:
   # 毎日0:00 UTC（日本時道9:00）に実行
   schedule:
     - cron: '0 0 * * *'
+  # 手動実行（修正後の動作確認用）
+  workflow_dispatch:
   
   # 手動実行も可能
   workflow_dispatch:
