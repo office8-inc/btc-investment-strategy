@@ -435,6 +435,27 @@ def run_analysis() -> None:
         try:
             xserver = XServerUploader()
 
+            # チャート用OHLCデータをアップロード（ohlc.json）
+            # フロントはこの同一オリジンの静的JSONを読む（外部API・プロキシ不要）
+            ohlc_candles = [
+                {
+                    "time": int(row.timestamp.timestamp()),
+                    "open": float(row.open),
+                    "high": float(row.high),
+                    "low": float(row.low),
+                    "close": float(row.close),
+                }
+                for row in df_daily.itertuples()
+            ]
+            ohlc_payload = {
+                "updated_at": datetime.now().isoformat(),
+                "candles": ohlc_candles,
+            }
+            if xserver.upload_json(ohlc_payload, "ohlc.json"):
+                logger.info(f"OHLCデータをアップロード: {len(ohlc_candles)}本")
+            else:
+                logger.warning("OHLCデータのアップロードに失敗しました")
+
             # 予測ページをアップロード（JSON + HTML）
             public_url = xserver.upload_prediction_page(
                 patterns=patterns,

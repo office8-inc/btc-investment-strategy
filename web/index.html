@@ -534,42 +534,35 @@
             }
         }
         
-        // CryptoCompareから価格データを取得（PHPプロキシ経由）
-        // バックエンド（Python）と同じAPIを使用して365日分の日足データを取得
+        // 価格データを取得（同一オリジンの静的JSON）
+        // バックエンド（Python）がCoinbaseで取得した365日分の日足を ohlc.json として
+        // 毎日アップロードしている。外部API・プロキシ・CORS/CSPの問題が起きない。
         async function fetchCandleData() {
             try {
-                // PHPプロキシ経由でCryptoCompare APIにアクセス（CSP回避）
-                const response = await fetch('api/cryptocompare_proxy.php?fsym=BTC&tsym=USD&limit=365');
-                
+                const response = await fetch('ohlc.json?' + Date.now());
+
                 if (!response.ok) {
-                    throw new Error('Proxy request failed: ' + response.status);
+                    throw new Error('OHLC request failed: ' + response.status);
                 }
-                
+
                 const data = await response.json();
-                
-                // エラーレスポンスのチェック
-                if (data.error) {
-                    throw new Error(data.error);
-                }
-                
-                // CryptoCompare形式: { Response: "Success", Data: { Data: [{time, open, high, low, close, ...}, ...] } }
-                if (data.Response === 'Success' && data.Data && data.Data.Data) {
-                    const candles = data.Data.Data.map(function(item) {
-                        return {
-                            time: item.time,  // Unix秒
-                            open: item.open,
-                            high: item.high,
-                            low: item.low,
-                            close: item.close,
-                        };
-                    });
-                    // CryptoCompareは古い順で返すのでそのまま
-                    
-                    if (candles.length > 0) {
-                        candleSeries.setData(candles);
-                        lastCandleTime = candles[candles.length - 1].time;
-                        return candles[candles.length - 1].close;
-                    }
+
+                // 形式: { updated_at: "...", candles: [{time, open, high, low, close}, ...] }（古い順）
+                const rawCandles = (data && data.candles) ? data.candles : [];
+                const candles = rawCandles.map(function(item) {
+                    return {
+                        time: item.time,  // Unix秒
+                        open: item.open,
+                        high: item.high,
+                        low: item.low,
+                        close: item.close,
+                    };
+                });
+
+                if (candles.length > 0) {
+                    candleSeries.setData(candles);
+                    lastCandleTime = candles[candles.length - 1].time;
+                    return candles[candles.length - 1].close;
                 }
             } catch (error) {
                 console.error('Failed to fetch candle data:', error);
