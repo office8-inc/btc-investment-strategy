@@ -1,6 +1,8 @@
 # ビットコイン投資戦略 - 毎日自動分析ワークフロー
 # 毎朝9時（日本時間）に自動実行し、結果をXSERVERにアップロードします
 # 実行前にX APIで最新の#ビットコイン投稿を取得してPineconeに保存
+# keepalive ジョブが毎回ワークフローを re-enable し、
+# 「60日間リポジトリ活動なしでスケジュール実行が自動停止」される仕様を回避する
 
 name: Daily BTC Analysis
 
@@ -17,6 +19,17 @@ env:
   TZ: 'Asia/Tokyo'
 
 jobs:
+  # 60日無活動によるスケジュール自動停止を防ぐ（enable API 呼び出しでタイマーがリセットされる）
+  keepalive:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Re-enable workflow
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/daily_analysis.yml/enable"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # メイン分析を実行
   analyze:
     runs-on: ubuntu-latest
